@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
-import { Hand, Lock, ChevronDown, ClipboardList, Combine, Download, Printer, RefreshCw, Search, X } from "lucide-react"
+import { Hand, Lock, Send, ChevronDown, ClipboardList, Combine, Download, Printer, RefreshCw, Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -16,19 +16,26 @@ import { OrderSheet } from "@/components/oms/order-sheet"
 import { useQueryParam } from "@/components/oms/use-query-param"
 import { canMerge, useOms } from "@/components/oms/store"
 import { Pager } from "@/components/oms/pager"
-import { PAYMENT_LABEL, PLATFORMS, PLATFORM_IDS, SHOPS, STATUSES, STATUS_IDS, orderTotal, productBySku, shopById, type OrderStatus } from "@/lib/mock-data"
-import { baht, dateTime, dueIn, num } from "@/lib/format"
+import { DAY, NOW, can, ROLES, PAYMENT_LABEL, PLATFORMS, PLATFORM_IDS, SHOPS, STATUSES, STATUS_IDS, orderTotal, productBySku, shopById, type Order, type OrderStatus, type PlatformId } from "@/lib/mock-data"
+import { baht, dateTime, dayKey, dueIn, num } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 
 export function OrdersView() {
   const params = useSearchParams()
-  const { orders, customers, printLabels, setStatus, mergeOrders, claimOrders, lockedBy, me } = useOms()
+  const { orders, customers, printLabels, setStatus, mergeOrders, claimOrders, confirmToWarehouse, lockedBy, me } = useOms()
   const [owner, setOwner] = React.useState("all")
+  // accounting & other read-only roles: no selection / bulk actions
+  const canAct = can(me.role, "order.claim") || can(me.role, "order.status") || can(me.role, "order.print") || can(me.role, "order.confirm")
   const [statusParam, setStatusParam] = useQueryParam("status")
   const tab = (statusParam as OrderStatus | "all" | null) ?? "to_process"
   const setTab = (s: OrderStatus | "all") => setStatusParam(s)
-  const [platform, setPlatform] = React.useState("all")
+  const [platformParam, setPlatformParam] = useQueryParam("platform")
+  const platform = platformParam ?? "all"
+  const setPlatform = (v: string) => setPlatformParam(v === "all" ? null : v)
+  const [dateParam, setDateParam] = useQueryParam("date")
+  const range = (dateParam ?? "all") as DateRange
+  const setRange = (v: string) => setDateParam(v === "all" ? null : v)
   const [shop, setShop] = React.useState("all")
   const [payment, setPayment] = React.useState("all")
   const [q, setQ] = React.useState(params.get("q") ?? "")
@@ -45,6 +52,7 @@ export function OrdersView() {
 
   const base = orders.filter(
     (o) =>
+      inRange(o.createdAt, range) &&
       (platform === "all" || o.platform === platform) &&
       (shop === "all" || o.shopId === shop) &&
       (payment === "all" || o.payment === payment) &&
@@ -61,7 +69,7 @@ export function OrdersView() {
   const selOrders = orders.filter((o) => selected.has(o.id))
   const merge = canMerge(selOrders)
 
-  React.useEffect(() => setPage(0), [tab, platform, shop, payment, q])
+  React.useEffect(() => setPage(0), [tab, platform, shop, payment, q, range])
 
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -88,7 +96,8 @@ export function OrdersView() {
             <Button variant="outline" onClick={() => toast("ส่งออกไฟล์ Excel (จำลอง)")}>
               <Download /> ส่งออก
             </Button>
-            <Button render={<Link href="/orders/new" />}>+ สร้างออเดอร์</Button>
+            {can(me.role, "order.create") && <Button render={<Link href="/orders/new" />}>+ สร้างออเดอร์</Button>}
+            {!canAct && <span className="rounded-lg bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">ดูอย่างเดียว ({ROLES[me.role].label})</span>}
           </>
         }
       />
@@ -122,6 +131,7 @@ export function OrdersView() {
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="เลขออเดอร์ / ชื่อ / เบอร์โทร / เลขพัสดุ" className="pl-8" />
         </div>
+        <FilterSelect value={range} onChange={setRange} className="min-w-32" options={DATE_OPTIONS} />
         <FilterSelect
           value={platform}
           onChange={(v) => {
@@ -142,12 +152,13 @@ export function OrdersView() {
           ]}
         />
         <FilterSelect value={payment} onChange={setPayment} options={[{ value: "all", label: "ทุกวิธีชำระ" }, ...Object.entries(PAYMENT_LABEL).map(([value, label]) => ({ value, label }))]} />
-        {(platform !== "all" || shop !== "all" || payment !== "all" || q) && (
+        {(range !== "all" || platform !== "all" || shop !== "all" || payment !== "all" || q) && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setPlatform("all")
+              setRange("all")
               setShop("all")
               setPayment("all")
               setQ("")
@@ -158,20 +169,37 @@ export function OrdersView() {
         )}
       </div>
 
+      {(range !== "all" || platform !== "all") && <SalesSummary orders={base} range={range} platform={platform} />}
+
       {/* Bulk action bar */}
-      {selected.size > 0 && (
+      {canAct && selected.size > 0 && (
         <div className="sticky top-16 z-10 flex flex-wrap items-center gap-2 rounded-xl border bg-card p-2 shadow-sm">
           <span className="px-2 text-sm font-medium">เลือก {selected.size} ออเดอร์</span>
-          <Button
-            size="sm"
-            onClick={() => {
-              const done = printLabels([...selected])
-              if (done.length) toast.success(`พิมพ์ใบปะหน้า ${done.length} ใบ`, { description: "ออเดอร์ที่ “รอจัดการ” ถูกย้ายไป “รอแพ็ก” และรับงานเป็นของคุณ" })
-              clear()
-            }}
-          >
-            <Printer /> พิมพ์ใบปะหน้า
-          </Button>
+          {can(me.role, "order.confirm") && (
+            <Button
+              size="sm"
+              onClick={() => {
+                const { done, batch } = confirmToWarehouse([...selected])
+                if (done.length) toast.success(`ส่งให้คลังแพ็กแล้ว ${done.length} ออเดอร์ (รอบ ${batch})`, { description: "ได้เลขพัสดุจากแพลตฟอร์มแล้ว — ทีมคลังได้รับแจ้งเตือน และเห็นในคิวแพ็กทันที" })
+                clear()
+              }}
+            >
+              <Send /> ยืนยัน &amp; ส่งให้คลัง
+            </Button>
+          )}
+          {can(me.role, "order.print") && (
+            <Button
+              size="sm"
+              variant={can(me.role, "order.confirm") ? "outline" : "default"}
+              onClick={() => {
+                const done = printLabels([...selected])
+                if (done.length) toast.success(`พิมพ์ใบปะหน้า ${done.length} ใบ`, { description: "รับงานเป็นของคุณแล้ว" })
+                clear()
+              }}
+            >
+              <Printer /> พิมพ์ใบปะหน้า
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
@@ -234,6 +262,7 @@ export function OrdersView() {
           <Table>
             <TableHeader>
               <TableRow>
+                {canAct && (
                 <TableHead className="w-10">
                   <Checkbox
                     checked={allOnPage}
@@ -250,6 +279,7 @@ export function OrdersView() {
                     aria-label="เลือกทั้งหมด"
                   />
                 </TableHead>
+                )}
                 <TableHead>ออเดอร์</TableHead>
                 <TableHead>ลูกค้า</TableHead>
                 <TableHead>สินค้า</TableHead>
@@ -266,9 +296,11 @@ export function OrdersView() {
                 const first = productBySku(o.items[0].sku)
                 return (
                   <TableRow key={o.id} data-state={selected.has(o.id) ? "selected" : undefined} className="cursor-pointer" onClick={() => setOpenId(o.id)}>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <Checkbox checked={selected.has(o.id)} onCheckedChange={() => toggle(o.id)} aria-label={`เลือก ${o.id}`} />
-                    </TableCell>
+                    {canAct && (
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox checked={selected.has(o.id)} onCheckedChange={() => toggle(o.id)} aria-label={`เลือก ${o.id}`} />
+                      </TableCell>
+                    )}
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <PlatformDot platform={o.platform} />
@@ -331,7 +363,7 @@ export function OrdersView() {
               })}
               {pageList.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
+                  <TableCell colSpan={canAct ? 8 : 7} className="py-12 text-center text-muted-foreground">
                     ไม่พบออเดอร์ตามเงื่อนไข
                   </TableCell>
                 </TableRow>
@@ -344,5 +376,104 @@ export function OrdersView() {
 
       <OrderSheet order={orders.find((o) => o.id === openId) ?? null} onOpenChange={(open) => !open && setOpenId(null)} />
     </div>
+  )
+}
+
+// ---------- date range + "what did we sell" summary ----------
+type DateRange = "all" | "today" | "yesterday" | "7d" | "30d"
+const DATE_OPTIONS: { value: DateRange; label: string }[] = [
+  { value: "all", label: "ทุกวัน" },
+  { value: "today", label: "วันนี้" },
+  { value: "yesterday", label: "เมื่อวาน" },
+  { value: "7d", label: "7 วันล่าสุด" },
+  { value: "30d", label: "30 วันล่าสุด" },
+]
+function inRange(t: number, r: DateRange) {
+  if (r === "today") return dayKey(t) === dayKey(NOW)
+  if (r === "yesterday") return dayKey(t) === dayKey(NOW - DAY)
+  if (r === "7d") return t > NOW - 7 * DAY
+  if (r === "30d") return t > NOW - 30 * DAY
+  return true
+}
+
+function SalesSummary({ orders, range, platform }: { orders: Order[]; range: DateRange; platform: string }) {
+  const [showAll, setShowAll] = React.useState(false)
+  const sold = orders.filter((o) => o.status !== "cancelled")
+  const revenue = sold.reduce((s, o) => s + orderTotal(o), 0)
+  const items = new Map<string, { qty: number; rev: number; orders: number }>()
+  for (const o of sold)
+    for (const it of o.items) {
+      if (!it.price) continue
+      const cur = items.get(it.sku) ?? { qty: 0, rev: 0, orders: 0 }
+      cur.qty += it.qty
+      cur.rev += it.qty * it.price
+      cur.orders += 1
+      items.set(it.sku, cur)
+    }
+  const rows = [...items.entries()].sort((a, b) => b[1].qty - a[1].qty || b[1].rev - a[1].rev)
+  const units = rows.reduce((s, [, v]) => s + v.qty, 0)
+  const byPlatform = PLATFORM_IDS.map((p) => {
+    const l = sold.filter((o) => o.platform === p)
+    return { p, n: l.length, rev: l.reduce((s, o) => s + orderTotal(o), 0) }
+  }).filter((x) => x.n)
+  const label = `${DATE_OPTIONS.find((d) => d.value === range)!.label}${platform !== "all" ? ` · ${PLATFORMS[platform as PlatformId].name}` : " · ทุกช่องทาง"}`
+  const shown = showAll ? rows : rows.slice(0, 6)
+  return (
+    <Card className="gap-3 py-3">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4">
+        <div className="flex items-center gap-2 font-semibold">
+          {platform !== "all" && <PlatformDot platform={platform as PlatformId} />}
+          สรุปยอดขาย {label}
+        </div>
+        <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
+          <span>
+            <b className="tabular-nums">{num(sold.length)}</b> ออเดอร์
+          </span>
+          <span>
+            <b className="tabular-nums">{baht(revenue)}</b>
+          </span>
+          <span>
+            <b className="tabular-nums">{num(units)}</b> ชิ้น · {rows.length} SKU
+          </span>
+          {orders.length - sold.length > 0 && <span className="text-muted-foreground">ยกเลิก {orders.length - sold.length}</span>}
+        </div>
+        {platform === "all" && (
+          <div className="flex flex-wrap gap-1.5">
+            {byPlatform.map((x) => (
+              <span key={x.p} className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
+                <PlatformDot platform={x.p} className="size-4 text-[7px]" /> {x.n} · {baht(x.rev)}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      {rows.length > 0 ? (
+        <div className="px-4">
+          <div className="mb-1.5 text-xs font-medium text-muted-foreground">สินค้าที่ขายได้ (เรียงตามจำนวนชิ้น)</div>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {shown.map(([sku, v], i) => (
+              <div key={sku} className="flex items-center gap-2.5 rounded-lg border p-2">
+                <span className="w-4 text-center text-xs font-semibold text-muted-foreground">{i + 1}</span>
+                <ProductThumb sku={sku} className="size-10" />
+                <div className="min-w-0 flex-1">
+                  <div className="line-clamp-1 text-sm">{productBySku(sku).name}</div>
+                  <div className="text-[11px] text-muted-foreground">
+                    {v.orders} ออเดอร์ · {baht(v.rev)}
+                  </div>
+                </div>
+                <span className="shrink-0 text-sm font-semibold tabular-nums">×{v.qty}</span>
+              </div>
+            ))}
+          </div>
+          {rows.length > 6 && (
+            <button className="mt-2 text-xs text-primary hover:underline" onClick={() => setShowAll((x) => !x)}>
+              {showAll ? "ย่อ" : `ดูทั้งหมด ${rows.length} SKU`}
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="px-4 text-sm text-muted-foreground">ยังไม่มียอดขายในช่วงนี้</div>
+      )}
+    </Card>
   )
 }

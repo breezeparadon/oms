@@ -8,12 +8,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { PageHeader, PlatformBadge, Pill, ProductThumb } from "@/components/oms/bits"
 import { useOms } from "@/components/oms/store"
-import { productBySku, shopById } from "@/lib/mock-data"
+import { productBySku, shopById, userById } from "@/lib/mock-data"
+import { ago } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 export default function PackingPage() {
   const { orders, customers, setStatus, printLabels, lockedBy, claimOrders } = useOms()
-  const queue = orders.filter((o) => o.status === "to_pack" || o.status === "to_process")
+  // only orders confirmed by sales (handed off) appear in the warehouse queue
+  const queue = orders.filter((o) => o.status === "to_pack").sort((a, b) => (a.handoff?.at ?? 0) - (b.handoff?.at ?? 0))
+  const rounds = [...new Set(queue.map((o) => o.handoff?.batch ?? "-"))].map((b) => ({ batch: b, list: queue.filter((o) => (o.handoff?.batch ?? "-") === b) }))
+  const waitingConfirm = orders.filter((o) => o.status === "to_process").length
   const [code, setCode] = React.useState("")
   const [activeId, setActiveId] = React.useState<string | null>(null)
   const [scanned, setScanned] = React.useState<Record<string, number>>({})
@@ -25,7 +29,8 @@ export default function PackingPage() {
     const v = raw.trim().toUpperCase()
     const o = orders.find((x) => x.id === v || x.tracking === v || x.platformOrderNo === raw.trim())
     if (!o) return toast.error(`ไม่พบออเดอร์ “${raw}”`)
-    if (!["to_pack", "to_process"].includes(o.status)) return toast.warning(`${o.id} ไม่ได้อยู่ในสถานะรอแพ็ก`)
+    if (o.status === "to_process") return toast.warning(`${o.id} ยังไม่ได้รับการยืนยันจากแอดมินขาย`, { description: "รอแอดมินกด “ยืนยัน & ส่งให้คลัง” ก่อน จึงจะแพ็กได้" })
+    if (o.status !== "to_pack") return toast.warning(`${o.id} ไม่ได้อยู่ในสถานะรอแพ็ก`)
     const holder = lockedBy(o)
     if (holder) return toast.error(`${o.id} — ${holder.name} รับงานนี้อยู่`, { description: "ข้ามไปออเดอร์ถัดไป เพื่อไม่ให้ทำงานซ้ำกัน" })
     claimOrders([o.id])
@@ -149,11 +154,19 @@ export default function PackingPage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>คิวรอแพ็ก</CardTitle>
-            <CardDescription>{queue.length} ออเดอร์</CardDescription>
+            <CardTitle>คิวรอแพ็ก (ส่งมาจากแอดมินขาย)</CardTitle>
+            <CardDescription>{queue.length} ออเดอร์ที่ยืนยันแล้ว · แยกตามรอบที่แอดมินส่งมา</CardDescription>
           </CardHeader>
           <CardContent className="max-h-[560px] space-y-1 overflow-y-auto">
-            {queue.slice(0, 40).map((o) => (
+            {rounds.map((r) => {
+              const h = r.list[0].handoff
+              return (
+                <div key={r.batch} className="mb-3">
+                  <div className="sticky top-0 z-10 mb-1 flex items-center justify-between rounded-md bg-muted px-2 py-1 text-[11px]">
+                    <span className="font-semibold">รอบ {r.batch}</span>
+                    <span className="text-muted-foreground">{h ? `${userById(h.by)?.name} · ${ago(h.at)}` : ""} · {r.list.length} ออเดอร์</span>
+                  </div>
+            {r.list.map((o) => (
               <button key={o.id} onClick={() => openOrder(o.id)} className={cn("flex w-full items-center justify-between rounded-lg p-2 text-left text-sm hover:bg-muted", activeId === o.id && "bg-muted", lockedBy(o) && "opacity-60")}>
                 <span className="font-medium">{o.id}</span>
                 <span className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -166,6 +179,11 @@ export default function PackingPage() {
                 </span>
               </button>
             ))}
+                </div>
+              )
+            })}
+            {queue.length === 0 && <div className="py-8 text-center text-xs text-muted-foreground">ยังไม่มีงานส่งมาให้คลัง</div>}
+            {waitingConfirm > 0 && <div className="mt-2 rounded-md border border-dashed p-2 text-center text-[11px] text-muted-foreground">อีก {waitingConfirm} ออเดอร์รอแอดมินขายยืนยัน (ยังไม่เข้าคิวคลัง)</div>}
           </CardContent>
         </Card>
       </div>

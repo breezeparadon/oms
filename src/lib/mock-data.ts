@@ -366,7 +366,7 @@ export type OrderStatus = "unpaid" | "to_process" | "to_pack" | "to_ship" | "shi
 
 export const STATUSES: Record<OrderStatus, { label: string; className: string }> = {
   unpaid: { label: "รอชำระเงิน", className: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200" },
-  to_process: { label: "รอจัดการ", className: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+  to_process: { label: "รอยืนยัน", className: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" },
   to_pack: { label: "รอแพ็ก", className: "bg-orange-100 text-orange-800 dark:bg-orange-950 dark:text-orange-300" },
   to_ship: { label: "รอขนส่งรับ", className: "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300" },
   shipping: { label: "กำลังจัดส่ง", className: "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300" },
@@ -414,6 +414,8 @@ export type Order = {
   /** staff user id currently working on this order (soft lock) */
   claimedBy?: string
   claimedAt?: number
+  /** sales confirmed the order and handed it to the warehouse (one batch = one hand-off round) */
+  handoff?: { batch: string; by: string; at: number }
   events?: OrderEvent[]
 }
 export type OrderEvent = { at: number; by: string; text: string }
@@ -772,16 +774,15 @@ export const INITIAL_PLATFORM_LISTINGS: PlatformListing[] = (() => {
 // ---------- Staff users & roles (demo login switcher) ----------
 export type Role = "owner" | "sales" | "warehouse" | "accounting"
 export const ROLES: Record<Role, { label: string; desc: string; className: string }> = {
-  owner: { label: "เจ้าของ / ผู้จัดการ", desc: "เห็นทุกเมนู ตั้งค่า เชื่อมต่อช่องทาง ดูรายงาน", className: "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300" },
+  owner: { label: "ผู้จัดการ", desc: "เห็นทุกเมนู ตั้งค่า เชื่อมต่อช่องทาง ดูรายงาน และยังตอบแชทได้", className: "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300" },
   sales: { label: "แอดมินขาย", desc: "ตอบแชท ดูแลลูกค้า สร้างออเดอร์จากแชท", className: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300" },
   warehouse: { label: "คลัง / แพ็กของ", desc: "หยิบ แพ็ก พิมพ์ใบปะหน้า รับของเข้า-คืน", className: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" },
   accounting: { label: "บัญชี", desc: "คืนเงิน ตรวจสลิป รายงานยอดขาย/กำไร", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
 }
 export type StaffUser = { id: string; name: string; short: string; role: Role }
 export const USERS: StaffUser[] = [
-  { id: "u-owner", name: "คุณบอส (ผู้จัดการ)", short: "บอ", role: "owner" },
+  { id: "u-breeze", name: "แอดมินบรีส", short: "บร", role: "owner" }, // ผู้จัดการ — ยังตอบแชทได้
   { id: "u-yok", name: "แอดมินหยก", short: "หย", role: "sales" },
-  { id: "u-breeze", name: "แอดมินบรีส", short: "บร", role: "sales" },
   { id: "u-nook", name: "แอดมินนุ๊ก", short: "นุ", role: "sales" },
   { id: "u-keng", name: "พี่เก่ง (คลัง)", short: "เก", role: "warehouse" },
   { id: "u-fah", name: "น้องฟ้า (แพ็ก)", short: "ฟ้", role: "warehouse" },
@@ -814,7 +815,11 @@ export const PERMS = {
   "product.import": ["owner"],
   "order.create": ["owner", "sales"],
   "order.pack": ["owner", "warehouse"],
-  "order.print": ["owner", "warehouse", "sales"],
+  "order.print": ["owner", "warehouse"],
+  "order.confirm": ["owner", "sales"],
+  "order.claim": ["owner", "warehouse", "sales"],
+  "order.status": ["owner", "warehouse", "sales"],
+  "order.merge": ["owner", "warehouse", "sales"],
   "return.approve": ["owner", "sales"],
   "return.receive": ["owner", "warehouse"],
   "return.refund": ["owner", "accounting"],
@@ -848,3 +853,23 @@ INITIAL_ORDERS.filter((o) => o.status === "to_pack")
     o.claimedAt = NOW - int(3, 40) * MIN
     o.events = [...(o.events ?? []), { at: o.claimedAt, by: o.claimedBy, text: "รับงานแพ็ก" }]
   })
+
+// Orders already confirmed by sales and sent to the warehouse, grouped into hand-off rounds
+{
+  const toPack = INITIAL_ORDERS.filter((o) => o.status === "to_pack").sort((a, b) => a.createdAt - b.createdAt)
+  const rounds = [
+    { by: "u-yok", minsAgo: 185 },
+    { by: "u-nook", minsAgo: 95 },
+    { by: "u-breeze", minsAgo: 40 },
+    { by: "u-yok", minsAgo: 12 },
+  ]
+  toPack.forEach((o, i) => {
+    const r = rounds[Math.min(rounds.length - 1, Math.floor((i / toPack.length) * rounds.length))]
+    const ri = rounds.indexOf(r)
+    const at = NOW - r.minsAgo * MIN
+    o.handoff = { batch: `HO-${String(41 + ri).padStart(4, "0")}`, by: r.by, at }
+    o.labelPrinted = false
+    o.events = [...(o.events ?? []).filter((e) => !e.text.startsWith("พิมพ์ใบปะหน้า")), { at, by: r.by, text: `ยืนยันออเดอร์ + รับเลขพัสดุ → ส่งให้คลังแพ็ก (รอบ ${o.handoff.batch})` }].sort((a, b) => a.at - b.at)
+    o.tracking = o.tracking ?? `TH${String(48000000 + i * 7717).slice(0, 8)}A`
+  })
+}

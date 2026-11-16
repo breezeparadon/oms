@@ -2,10 +2,10 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { AlertTriangle, Bell, MessageCircle, PackageX, PlugZap, RotateCcw, ShoppingCart } from "lucide-react"
+import { PackageCheck, AlertTriangle, Bell, MessageCircle, PackageX, PlugZap, RotateCcw, ShoppingCart } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { NOW, SHOPS, customerById, messagePreview, orderTotal } from "@/lib/mock-data"
+import { NOW, SHOPS, customerById, messagePreview, orderTotal, userById } from "@/lib/mock-data"
 import { ago, baht } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { PlatformDot } from "./bits"
@@ -23,7 +23,7 @@ type Noti = {
 }
 
 export function Notifications() {
-  const { orders, conversations, products, reserved, returns, customers } = useOms()
+  const { orders, conversations, products, reserved, returns, customers, me } = useOms()
   const [open, setOpen] = React.useState(false)
   const [tab, setTab] = React.useState<"all" | Noti["kind"]>("all")
   const [read, setRead] = React.useState<Set<string>>(new Set())
@@ -51,6 +51,17 @@ export function Notifications() {
       if (avail <= p.safety)
         list.push({ id: `stk-${p.sku}`, kind: "alert", icon: <PackageX />, tone: "bg-amber-100 text-amber-700", title: avail <= 0 ? "สินค้าหมดสต๊อก" : "สต๊อกใกล้หมด", body: `${p.name} — ${avail <= 0 ? "หมด" : `เหลือ ${avail}`}`, at: NOW - 20 * 60_000, href: "/inventory" })
     }
+    // Warehouse: new hand-off rounds from sales (only for roles that pack)
+    if (me.role === "warehouse" || me.role === "owner") {
+      const rounds = new Map<string, { by: string; at: number; n: number }>()
+      for (const o of orders) if (o.status === "to_pack" && o.handoff) {
+        const r = rounds.get(o.handoff.batch) ?? { by: o.handoff.by, at: o.handoff.at, n: 0 }
+        r.n++
+        rounds.set(o.handoff.batch, r)
+      }
+      for (const [batch, r] of rounds)
+        list.push({ id: `ho-${batch}-${r.n}`, kind: "order", icon: <PackageCheck />, tone: "bg-orange-100 text-orange-700", title: `งานส่งคลัง ${batch}: ${r.n} ออเดอร์รอแพ็ก`, body: `${userById(r.by)?.name ?? ""} ยืนยันแล้ว ได้เลขพัสดุแล้ว`, at: r.at, href: "/fulfillment/packing" })
+    }
     // Return requests
     for (const r of returns.filter((x) => x.status === "requested"))
       list.push({ id: `rt-${r.id}`, kind: "alert", icon: <RotateCcw />, tone: "bg-fuchsia-100 text-fuchsia-700", title: `คำขอคืนสินค้า ${r.id}`, body: `${r.orderId} · ${r.reason}`, at: r.createdAt, href: "/returns" })
@@ -58,7 +69,7 @@ export function Notifications() {
     for (const s of SHOPS.filter((x) => x.tokenExpiresInDays <= 7))
       list.push({ id: `tok-${s.id}`, kind: "alert", icon: <PlugZap />, tone: "bg-sky-100 text-sky-700", title: "การเชื่อมต่อใกล้หมดอายุ", body: `${s.name} — เหลือ ${s.tokenExpiresInDays} วัน`, at: NOW - 3 * 3600_000, href: "/channels" })
     return list.sort((a, b) => b.at - a.at)
-  }, [orders, conversations, products, reserved, returns, customers])
+  }, [orders, conversations, products, reserved, returns, customers, me])
 
   const unread = items.filter((n) => !read.has(n.id)).length
   const shown = items.filter((n) => tab === "all" || n.kind === tab)

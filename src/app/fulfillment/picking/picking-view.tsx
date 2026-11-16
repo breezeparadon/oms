@@ -29,7 +29,7 @@ export function PickingView() {
   const [wh, setWh] = React.useState<"bkk" | "cnx">("bkk")
   const [picked, setPicked] = React.useState<Set<string>>(new Set())
 
-  const batch = orders.filter((o) => (ids ? ids.includes(o.id) : o.status === "to_pack" || o.status === "to_process") && o.warehouse === wh)
+  const batch = orders.filter((o) => (ids ? ids.includes(o.id) : o.status === "to_pack") && o.warehouse === wh)
   const lines = new Map<string, { sku: string; qty: number; orders: string[] }>()
   for (const o of batch)
     for (const it of o.items) {
@@ -45,7 +45,7 @@ export function PickingView() {
     <div className="space-y-4">
       <PageHeader
         title="ใบหยิบสินค้า (Picking List)"
-        description={ids ? `จากออเดอร์ที่เลือก ${ids.length} รายการ` : "รวมทุกออเดอร์ที่ “รอจัดการ” และ “รอแพ็ก” — จัดเรียงตามตำแหน่งชั้นวาง เดินหยิบรอบเดียว"}
+        description={ids ? `จากออเดอร์ที่เลือก ${ids.length} รายการ` : "รวมทุกออเดอร์ที่แอดมินยืนยันส่งคลังแล้ว (“รอแพ็ก”) — จัดเรียงตามตำแหน่งชั้นวาง เดินหยิบรอบเดียว"}
         actions={
           <>
             <FilterSelect value={wh} onChange={(v) => setWh(v as "bkk" | "cnx")} options={[{ value: "bkk", label: "คลังกรุงเทพฯ" }, { value: "cnx", label: "คลังเชียงใหม่" }]} />

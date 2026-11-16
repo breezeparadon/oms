@@ -18,6 +18,9 @@ import {
   type PlatformListing,
   USERS,
   STATUSES,
+  ROLES,
+  can,
+  type Perm,
   SYSTEM,
   userById,
   userByName,
@@ -116,6 +119,7 @@ type Ctx = {
   me: StaffUser
   setMe: (id: string) => void
   claimOrders: (ids: string[]) => string[]
+  confirmToWarehouse: (ids: string[]) => { done: string[]; batch?: string }
   releaseOrder: (id: string) => void
   lockedBy: (o: Order) => StaffUser | undefined
   presence: (key: string) => { user: StaffUser; typing: boolean } | undefined
@@ -144,6 +148,7 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
   const [conversations, setConversations] = React.useState<Conversation[]>(INITIAL_CONVERSATIONS)
   const [returns, setReturns] = React.useState<ReturnCase[]>(INITIAL_RETURNS)
   const seq = React.useRef(INITIAL_ORDERS.length + 1)
+  const handoffSeq = React.useRef(45)
   const clock = React.useRef(0) // monotonic offset so new items sort after seed data
 
   const [movements, setMovements] = React.useState<Movement[]>(seedMovements)
@@ -249,6 +254,11 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
   const lockedBy = (o: Order) => (o.claimedBy && o.claimedBy !== me.id ? userById(o.claimedBy) : undefined)
   const event = (text: string) => ({ at: tick(), by: me.id, text })
   /** split ids into ones I may act on and ones a teammate is holding */
+  const deny = (perm: Perm, what: string) => {
+    if (can(me.role, perm)) return false
+    toast.error(`${me.name} ไม่มีสิทธิ์${what}`, { description: `สิทธิ์ของ ${ROLES[me.role].label} — ติดต่อผู้จัดการหากต้องการสิทธิ์เพิ่ม` })
+    return true
+  }
   const guard = (ids: string[], verb: string) => {
     const blocked = orders.filter((o) => ids.includes(o.id) && lockedBy(o))
     if (blocked.length) {
@@ -272,7 +282,41 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
       if (!p || p.userId === me.id) return undefined
       return { user: userById(p.userId)!, typing: p.typing }
     },
+    confirmToWarehouse: (ids0) => {
+      if (deny("order.confirm", "ยืนยันออเดอร์ส่งคลัง")) return { done: [] }
+      const ids1 = guard(ids0, "ยืนยัน")
+      const notReady = orders.filter((o) => ids1.includes(o.id) && o.status !== "to_process")
+      if (notReady.length)
+        toast.info(`ข้าม ${notReady.length} ออเดอร์ที่ไม่ได้อยู่สถานะ “รอยืนยัน”`, {
+          description: notReady
+            .slice(0, 3)
+            .map((o) => `${o.id} (${STATUSES[o.status].label})`)
+            .join(", "),
+        })
+      const ids = ids1.filter((id) => !notReady.some((x) => x.id === id))
+      if (!ids.length) return { done: [] }
+      const batch = `HO-${String(handoffSeq.current++).padStart(4, "0")}`
+      const at = tick()
+      setOrders((prev) =>
+        prev.map((o) =>
+          ids.includes(o.id)
+            ? {
+                ...o,
+                status: "to_pack",
+                // platform "arrange shipment" returns the tracking no. / AWB
+                tracking: o.tracking ?? `TH${(Number(o.id.slice(4)) * 7919 + 10000000).toString().slice(0, 8)}A`,
+                claimedBy: undefined,
+                claimedAt: undefined,
+                handoff: { batch, by: me.id, at },
+                events: [...(o.events ?? []), { at, by: me.id, text: `ยืนยันออเดอร์ + รับเลขพัสดุ → ส่งให้คลังแพ็ก (รอบ ${batch})` }],
+              }
+            : o,
+        ),
+      )
+      return { done: ids, batch }
+    },
     claimOrders: (ids) => {
+      if (deny("order.claim", "รับงานออเดอร์")) return []
       const ok = guard(ids, "รับงาน")
       setOrders((prev) => prev.map((o) => (ok.includes(o.id) && o.claimedBy !== me.id ? { ...o, claimedBy: me.id, claimedAt: tick(), events: [...(o.events ?? []), event("รับงาน")] } : o)))
       return ok
@@ -353,6 +397,7 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
     returns,
     reserved: (sku) => reservedMap.get(sku) ?? 0,
     setStatus: (ids0, status) => {
+      if (deny(SHIPPED.includes(status) && status === "to_ship" ? "order.pack" : "order.status", status === "to_ship" ? "แพ็กออเดอร์" : "เปลี่ยนสถานะออเดอร์")) return []
       const ids = guard(ids0, "เปลี่ยนสถานะ")
       applyStatus(ids, status)
       const done = ["to_ship", "shipping", "delivered", "cancelled", "returned"].includes(status)
@@ -373,6 +418,7 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
       return ids
     },
     printLabels: (ids0) => {
+      if (deny("order.print", "พิมพ์ใบปะหน้า")) return []
       const ids1 = guard(ids0, "พิมพ์")
       const already = orders.filter((o) => ids1.includes(o.id) && o.labelPrinted)
       if (already.length) {
@@ -405,6 +451,7 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
     mergeOrders: (ids) => {
       const group = orders.filter((o) => ids.includes(o.id))
       if (!canMerge(group).ok) return null
+      if (deny("order.merge", "รวมออเดอร์")) return null
       if (guard(ids, "รวม").length !== ids.length) return null
       const [base, ...others] = [...group].sort((a, b) => a.createdAt - b.createdAt)
       const items = new Map<string, { sku: string; qty: number; price: number }>()

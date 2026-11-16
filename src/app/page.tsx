@@ -38,6 +38,19 @@ export default function DashboardPage() {
   })
   const totalRev30 = byPlatform.reduce((s, r) => s + r.revenue, 0)
 
+  const todayByPlatform = PLATFORM_IDS.map((p) => {
+    const list = today.filter((o) => o.platform === p)
+    const qty = new Map<string, number>()
+    for (const o of list) for (const it of o.items) if (it.price) qty.set(it.sku, (qty.get(it.sku) ?? 0) + it.qty)
+    return {
+      p,
+      orders: list.length,
+      revenue: list.reduce((s, o) => s + orderTotal(o), 0),
+      units: [...qty.values()].reduce((s, n) => s + n, 0),
+      top: [...qty.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([sku]) => sku),
+    }
+  }).sort((a, b) => b.revenue - a.revenue)
+
   const pipeline: OrderStatus[] = ["unpaid", "to_process", "to_pack", "to_ship", "shipping"]
 
   return (
@@ -56,7 +69,7 @@ export default function DashboardPage() {
             )}
             {me.role === "warehouse" ? (
               <Button render={<Link href="/fulfillment/packing" />}>
-                <ShoppingCart /> ไปคิวแพ็ก ({count("to_pack") + count("to_process")})
+                <ShoppingCart /> ไปคิวแพ็ก ({count("to_pack")})
               </Button>
             ) : (
               <Button render={<Link href="/orders?status=to_process" />}>
@@ -69,11 +82,47 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label="ออเดอร์วันนี้" value={num(today.length)} hint={`จาก ${PLATFORM_IDS.length} ช่องทาง`} icon={<ShoppingCart />} />
+        <Link href="/orders?status=all&date=today" className="rounded-xl transition hover:ring-2 hover:ring-primary/30">
+          <Kpi label="ออเดอร์วันนี้" value={num(today.length)} hint="คลิกเพื่อดูรายการ →" icon={<ShoppingCart />} />
+        </Link>
         <Kpi label="ยอดขายวันนี้" value={baht(revenueToday)} hint="ไม่รวมออเดอร์ที่ยกเลิก" icon={<Banknote />} tone="good" />
         <Kpi label="รอจัดการ" value={num(count("to_process"))} hint={`${overdue.length} ออเดอร์ใกล้/เลยกำหนดส่ง`} icon={<Clock />} tone="warn" />
         <Kpi label="แชทยังไม่ได้ตอบ" value={num(unread.length)} hint={`${conversations.filter((c) => !c.assignee && c.status !== "closed").length} แชทยังไม่มีผู้รับผิดชอบ`} icon={<MessagesSquare />} tone="danger" />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>ยอดขายวันนี้แยกช่องทาง</CardTitle>
+          <CardDescription>คลิกช่องทางเพื่อดูรายการออเดอร์และสินค้าที่ขายวันนี้</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {todayByPlatform.map((r) => (
+            <Link
+              key={r.p}
+              href={`/orders?status=all&date=today&platform=${r.p}`}
+              className="group flex items-center gap-3 rounded-xl border p-3 transition hover:border-primary hover:bg-accent/40"
+            >
+              <PlatformDot platform={r.p} className="size-9 rounded-lg text-xs" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-medium">{PLATFORMS[r.p].name}</span>
+                  <span className="font-semibold tabular-nums">{baht(r.revenue)}</span>
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {r.orders} ออเดอร์ · {r.units} ชิ้น
+                </div>
+                <div className="mt-1.5 flex items-center gap-1">
+                  {r.top.map((sku) => (
+                    <ProductThumb key={sku} sku={sku} className="size-7" />
+                  ))}
+                  {r.orders === 0 && <span className="text-[11px] text-muted-foreground">ยังไม่มีออเดอร์วันนี้</span>}
+                  <span className="ml-auto text-[11px] text-primary opacity-0 transition group-hover:opacity-100">ดูรายการ →</span>
+                </div>
+              </div>
+            </Link>
+          ))}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

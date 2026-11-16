@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { toast } from "sonner"
-import { Eye, Hand, History, Lock, MessageCircle, Printer, Truck } from "lucide-react"
+import { Eye, Hand, History, Lock, MessageCircle, Printer, Send, Truck } from "lucide-react"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -13,7 +13,7 @@ import { CopyLinkButton, PlatformBadge, Pill, ProductThumb, StatusBadge, TierBad
 import { useOms } from "./store"
 
 export function OrderSheet({ order, onOpenChange }: { order: Order | null; onOpenChange: (open: boolean) => void }) {
-  const { customers, printLabels, setStatus, conversations, me, lockedBy, claimOrders, releaseOrder, presence } = useOms()
+  const { customers, printLabels, setStatus, conversations, me, lockedBy, claimOrders, releaseOrder, presence, confirmToWarehouse } = useOms()
   const o = order
   const c = o ? customers.find((x) => x.id === o.customerId) : undefined
   const conv = o ? conversations.find((x) => x.customerId === o.customerId) : undefined
@@ -38,6 +38,7 @@ export function OrderSheet({ order, onOpenChange }: { order: Order | null; onOpe
                 since={o.claimedAt}
                 viewing={presence(`order:${o.id}`)?.user}
                 closed={!["unpaid", "to_process", "to_pack"].includes(o.status)}
+                canClaim={can(me.role, "order.claim")}
                 onClaim={() => {
                   if (claimOrders([o.id]).length) toast.success(`รับงาน ${o.id} แล้ว`)
                 }}
@@ -139,8 +140,27 @@ export function OrderSheet({ order, onOpenChange }: { order: Order | null; onOpe
                 </div>
               )}
 
+              {o.handoff && (
+                <div className="flex items-center gap-2 rounded-lg bg-orange-50 px-3 py-2 text-xs text-orange-900 dark:bg-orange-950/40 dark:text-orange-200">
+                  <Send className="size-4 shrink-0" />
+                  <span>
+                    ส่งให้คลังแล้ว รอบ <b>{o.handoff.batch}</b> โดย {userById(o.handoff.by)?.name} · {ago(o.handoff.at)}
+                  </span>
+                </div>
+              )}
               <div className="flex flex-wrap gap-2">
-                {["to_process", "to_pack"].includes(o.status) && !o.labelPrinted && (
+                {o.status === "to_process" && can(me.role, "order.confirm") && (
+                  <Button
+                    disabled={!!lockedBy(o)}
+                    onClick={() => {
+                      const { done, batch } = confirmToWarehouse([o.id])
+                      if (done.length) toast.success(`ส่ง ${o.id} ให้คลังแพ็กแล้ว (รอบ ${batch})`, { description: "ทีมคลังได้รับแจ้งเตือนแล้ว" })
+                    }}
+                  >
+                    <Send /> ยืนยัน &amp; ส่งให้คลัง
+                  </Button>
+                )}
+                {o.status === "to_pack" && !o.labelPrinted && can(me.role, "order.print") && (
                   <Button
                     disabled={!!lockedBy(o) || !can(me.role, "order.print")}
                     onClick={() => {
@@ -212,6 +232,7 @@ export function WorkBanner({
   since,
   viewing,
   closed,
+  canClaim,
   onClaim,
   onRelease,
 }: {
@@ -220,6 +241,7 @@ export function WorkBanner({
   since?: number
   viewing?: StaffUser
   closed: boolean
+  canClaim: boolean
   onClaim: () => void
   onRelease: () => void
 }) {
@@ -252,10 +274,12 @@ export function WorkBanner({
           </div>
         ) : (
           <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
-            <span className="flex-1">ยังไม่มีใครรับงานนี้</span>
-            <Button size="xs" onClick={onClaim}>
-              <Hand /> รับงาน
-            </Button>
+            <span className="flex-1">ยังไม่มีใครรับงานนี้{!canClaim && " — ดูอย่างเดียว (ไม่มีสิทธิ์รับงาน)"}</span>
+            {canClaim && (
+              <Button size="xs" onClick={onClaim}>
+                <Hand /> รับงาน
+              </Button>
+            )}
           </div>
         ))}
     </div>

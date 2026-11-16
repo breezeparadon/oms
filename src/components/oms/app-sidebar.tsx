@@ -17,6 +17,7 @@ export function AppSidebar() {
   const pathname = usePathname()
   const { orders, conversations, returns, me } = useOms()
   const toProcess = orders.filter((o) => o.status === "to_process").length
+  const toPack = orders.filter((o) => o.status === "to_pack" && !o.claimedBy).length
   const unread = conversations.filter((c) => c.unread > 0 && c.status !== "closed").length
   const returnOpen = returns.filter((r) => r.status === "requested").length
 
@@ -34,7 +35,7 @@ export function AppSidebar() {
       label: "คลังและจัดส่ง",
       items: [
         { href: "/fulfillment/picking", label: "ใบหยิบสินค้า", icon: ClipboardList },
-        { href: "/fulfillment/packing", label: "สแกนแพ็กสินค้า", icon: ScanBarcode },
+        { href: "/fulfillment/packing", label: "สแกนแพ็กสินค้า", icon: ScanBarcode, badge: toPack },
         { href: "/inventory", label: "สต๊อกและ SKU", icon: Boxes },
       ],
     },
