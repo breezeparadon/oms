@@ -8,6 +8,8 @@ import { Toaster } from "@/components/ui/sonner"
 import { AppSidebar } from "./app-sidebar"
 import { Notifications } from "./notifications"
 import { GlobalSearch } from "./global-search"
+import { UserMenu } from "./user-menu"
+import { RouteGuard } from "./route-guard"
 import { OmsProvider } from "./store"
 
 const TITLES: Record<string, string> = {
@@ -40,10 +42,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="ml-auto flex items-center gap-2">
                 <GlobalSearch />
                 <Notifications />
-                <div className="flex size-8 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground">หย</div>
+                <UserMenu />
               </div>
             </header>
-            <div className="flex-1 p-4 md:p-6">{children}</div>
+            <div className="flex-1 p-4 md:p-6">
+              <RouteGuard>{children}</RouteGuard>
+            </div>
           </SidebarInset>
         </SidebarProvider>
       </TooltipProvider>

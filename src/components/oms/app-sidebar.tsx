@@ -9,12 +9,13 @@ import {
   Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { useOms } from "./store"
+import { canOpen } from "@/lib/mock-data"
 
 type Item = { href: string; label: string; icon: React.ComponentType; badge?: number }
 
 export function AppSidebar() {
   const pathname = usePathname()
-  const { orders, conversations, returns } = useOms()
+  const { orders, conversations, returns, me } = useOms()
   const toProcess = orders.filter((o) => o.status === "to_process").length
   const unread = conversations.filter((c) => c.unread > 0 && c.status !== "closed").length
   const returnOpen = returns.filter((r) => r.status === "requested").length
@@ -78,7 +79,7 @@ export function AppSidebar() {
         <SidebarTrigger className="hidden shrink-0 text-muted-foreground md:inline-flex" title="ย่อ/ขยายเมนู" />
       </SidebarHeader>
       <SidebarContent>
-        {groups.map((g) => (
+        {groups.map((g) => ({ ...g, items: g.items.filter((it) => canOpen(me.role, it.href)) })).filter((g) => g.items.length).map((g) => (
           <SidebarGroup key={g.label}>
             <SidebarGroupLabel>{g.label}</SidebarGroupLabel>
             <SidebarGroupContent>

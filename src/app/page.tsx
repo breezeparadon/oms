@@ -8,13 +8,13 @@ import { Button } from "@/components/ui/button"
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart"
 import { Kpi, PageHeader, PlatformBadge, PlatformDot, ProductThumb } from "@/components/oms/bits"
 import { useOms } from "@/components/oms/store"
-import { DAY, NOW, PLATFORMS, PLATFORM_IDS, STATUSES, customerById, messagePreview, orderTotal, type OrderStatus } from "@/lib/mock-data"
+import { canOpen, DAY, NOW, PLATFORMS, PLATFORM_IDS, STATUSES, customerById, messagePreview, orderTotal, type OrderStatus } from "@/lib/mock-data"
 import { ago, baht, dayKey, dueIn, num, shortDay } from "@/lib/format"
 
 const chartConfig = Object.fromEntries(PLATFORM_IDS.map((p) => [p, { label: PLATFORMS[p].name, color: PLATFORMS[p].color }])) as ChartConfig
 
 export default function DashboardPage() {
-  const { orders, products, conversations, reserved, customers } = useOms()
+  const { orders, products, conversations, reserved, customers, me } = useOms()
   const todayKey = dayKey(NOW)
   const today = orders.filter((o) => dayKey(o.createdAt) === todayKey && o.status !== "cancelled")
   const revenueToday = today.reduce((s, o) => s + orderTotal(o), 0)
@@ -45,16 +45,24 @@ export default function DashboardPage() {
       <div className="relative overflow-hidden rounded-2xl bg-brand-soft p-5 ring-1 ring-primary/10">
         <div className="pointer-events-none absolute -top-16 -right-10 size-56 rounded-full bg-brand-gradient opacity-20 blur-3xl" />
       <PageHeader
-        title="สวัสดี แอดมินหยก 👋"
+        title={`สวัสดี ${me.name} 👋`}
         description="ภาพรวมออเดอร์และแชทจาก 6 ช่องทาง — อัปเดตล่าสุด 1 นาทีที่แล้ว"
         actions={
           <>
-            <Button variant="outline" render={<Link href="/inbox" />}>
-              <MessagesSquare /> แชทค้างตอบ {unread.length}
-            </Button>
-            <Button render={<Link href="/orders?status=to_process" />}>
-              <ShoppingCart /> จัดการออเดอร์
-            </Button>
+            {canOpen(me.role, "/inbox") && (
+              <Button variant="outline" render={<Link href="/inbox" />}>
+                <MessagesSquare /> แชทค้างตอบ {unread.length}
+              </Button>
+            )}
+            {me.role === "warehouse" ? (
+              <Button render={<Link href="/fulfillment/packing" />}>
+                <ShoppingCart /> ไปคิวแพ็ก ({count("to_pack") + count("to_process")})
+              </Button>
+            ) : (
+              <Button render={<Link href="/orders?status=to_process" />}>
+                <ShoppingCart /> จัดการออเดอร์
+              </Button>
+            )}
           </>
         }
       />

@@ -16,6 +16,12 @@ import {
   INITIAL_PLATFORM_LISTINGS,
   type Listing,
   type PlatformListing,
+  USERS,
+  STATUSES,
+  SYSTEM,
+  userById,
+  userByName,
+  type StaffUser,
   NOW,
   PRODUCTS,
   type ChatMessage,
@@ -98,8 +104,8 @@ type Ctx = {
   customers: Customer[]
   conversations: Conversation[]
   returns: ReturnCase[]
-  setStatus: (ids: string[], status: OrderStatus) => void
-  printLabels: (ids: string[]) => void
+  setStatus: (ids: string[], status: OrderStatus) => string[]
+  printLabels: (ids: string[]) => string[]
   mergeOrders: (ids: string[]) => string | null
   addOrder: (o: Omit<Order, "id">) => string
   adjustStock: (sku: string, wh: "bkk" | "cnx", delta: number, reason?: { kind?: "adjust" | "return"; ref?: string }) => void
@@ -107,6 +113,16 @@ type Ctx = {
   available: (sku: string) => number
   simulateSale: (sku: string, platform: PlatformId) => string
   addProduct: (p: Product) => void
+  me: StaffUser
+  setMe: (id: string) => void
+  claimOrders: (ids: string[]) => string[]
+  releaseOrder: (id: string) => void
+  lockedBy: (o: Order) => StaffUser | undefined
+  presence: (key: string) => { user: StaffUser; typing: boolean } | undefined
+  takeOver: (convId: string) => void
+  autoAssign: boolean
+  setAutoAssign: (v: boolean) => void
+  assignLeastLoaded: (convId: string) => string
   setListing: (sku: string, platform: PlatformId, listing: Listing | null) => void
   platformListings: PlatformListing[]
   linkListing: (listingId: string, sku: string) => void
@@ -131,6 +147,28 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
   const clock = React.useRef(0) // monotonic offset so new items sort after seed data
 
   const [movements, setMovements] = React.useState<Movement[]>(seedMovements)
+  const [meId, setMeId] = React.useState("u-yok")
+  const [autoAssign, setAutoAssign] = React.useState(true)
+  // remember the demo user per browser (sessionStorage only — not a real login)
+  React.useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("oms-demo-user")
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (saved && USERS.some((u) => u.id === saved)) setMeId(saved)
+    } catch {}
+  }, [])
+  const me = USERS.find((u) => u.id === meId) ?? USERS[1]
+  // simulated teammates' presence: who has which chat/order open right now
+  const [presenceMap] = React.useState<Record<string, { userId: string; typing: boolean }>>(() => {
+    const m: Record<string, { userId: string; typing: boolean }> = {}
+    INITIAL_CONVERSATIONS.filter((c) => c.status !== "closed" && c.assignee && c.assignee !== "แอดมินหยก")
+      .slice(0, 6)
+      .forEach((c, i) => (m[`conv:${c.id}`] = { userId: userByName(c.assignee)!.id, typing: i % 3 === 0 }))
+    INITIAL_ORDERS.filter((o) => o.claimedBy)
+      .slice(0, 5)
+      .forEach((o) => (m[`order:${o.id}`] = { userId: o.claimedBy!, typing: false }))
+    return m
+  })
   const [platformListings, setPlatformListings] = React.useState<PlatformListing[]>(INITIAL_PLATFORM_LISTINGS)
   const tick = () => NOW + ++clock.current * 1000
 
@@ -208,7 +246,57 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
     record(moves)
   }
 
+  const lockedBy = (o: Order) => (o.claimedBy && o.claimedBy !== me.id ? userById(o.claimedBy) : undefined)
+  const event = (text: string) => ({ at: tick(), by: me.id, text })
+  /** split ids into ones I may act on and ones a teammate is holding */
+  const guard = (ids: string[], verb: string) => {
+    const blocked = orders.filter((o) => ids.includes(o.id) && lockedBy(o))
+    if (blocked.length) {
+      const who = [...new Set(blocked.map((o) => lockedBy(o)!.name))].join(", ")
+      toast.warning(`ข้าม ${blocked.length} ออเดอร์ที่ ${who} รับงานอยู่`, { description: `${blocked.map((o) => o.id).slice(0, 4).join(", ")} — ไม่${verb}ซ้ำ กันทำงานชนกัน` })
+    }
+    return ids.filter((id) => !blocked.some((b) => b.id === id))
+  }
+
   const value: Ctx = {
+    me,
+    setMe: (id) => {
+      setMeId(id)
+      try {
+        sessionStorage.setItem("oms-demo-user", id)
+      } catch {}
+    },
+    lockedBy,
+    presence: (key) => {
+      const p = presenceMap[key]
+      if (!p || p.userId === me.id) return undefined
+      return { user: userById(p.userId)!, typing: p.typing }
+    },
+    claimOrders: (ids) => {
+      const ok = guard(ids, "รับงาน")
+      setOrders((prev) => prev.map((o) => (ok.includes(o.id) && o.claimedBy !== me.id ? { ...o, claimedBy: me.id, claimedAt: tick(), events: [...(o.events ?? []), event("รับงาน")] } : o)))
+      return ok
+    },
+    releaseOrder: (id) => setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, claimedBy: undefined, claimedAt: undefined, events: [...(o.events ?? []), event("ปล่อยงานคืน")] } : o))),
+    takeOver: (convId) => {
+      const c = conversations.find((x) => x.id === convId)
+      const prevOwner = c?.assignee
+      setConversations((prev) =>
+        prev.map((x) =>
+          x.id === convId ? { ...x, assignee: me.name, messages: [...x.messages, { id: `sys-${clock.current}`, from: "system", text: `${me.name} รับช่วงต่อจาก ${prevOwner ?? "-"}`, at: tick() }] } : x,
+        ),
+      )
+      toast.success("รับช่วงแชทนี้แล้ว", { description: prevOwner ? `ระบบแจ้ง ${prevOwner} ให้แล้ว` : undefined })
+    },
+    autoAssign,
+    setAutoAssign,
+    assignLeastLoaded: (convId) => {
+      const sales = USERS.filter((u) => u.role === "sales")
+      const load = (name: string) => conversations.filter((c) => c.assignee === name && c.status !== "closed").length
+      const pickU = [...sales].sort((a, b) => load(a.name) - load(b.name))[0]
+      setConversations((prev) => prev.map((x) => (x.id === convId ? { ...x, assignee: pickU.name } : x)))
+      return `${pickU.name} (งานค้าง ${load(pickU.name)} แชท)`
+    },
     platformListings,
     addProduct: (p) => {
       registerProduct(p)
@@ -264,32 +352,60 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
     conversations,
     returns,
     reserved: (sku) => reservedMap.get(sku) ?? 0,
-    setStatus: (ids, status) => {
+    setStatus: (ids0, status) => {
+      const ids = guard(ids0, "เปลี่ยนสถานะ")
       applyStatus(ids, status)
+      const done = ["to_ship", "shipping", "delivered", "cancelled", "returned"].includes(status)
       setOrders((prev) =>
         prev.map((o) => {
-          if (!ids.includes(o.id)) return o
+          if (!ids.includes(o.id) || o.status === status) return o
           const tracking = ["to_ship", "shipping"].includes(status) && !o.tracking ? `TH${(Number(o.id.slice(4)) * 7919 + 10000000).toString().slice(0, 8)}X` : o.tracking
-          return { ...o, status, tracking, labelPrinted: o.labelPrinted || status === "to_ship" }
+          return {
+            ...o,
+            status,
+            tracking,
+            labelPrinted: o.labelPrinted || status === "to_ship",
+            claimedBy: done ? undefined : o.claimedBy,
+            events: [...(o.events ?? []), event(status === "to_ship" ? "แพ็กเสร็จ รอขนส่งเข้ารับ" : `เปลี่ยนสถานะเป็น “${STATUSES[status].label}”`)],
+          }
         }),
       )
+      return ids
     },
-    printLabels: (ids) =>
+    printLabels: (ids0) => {
+      const ids1 = guard(ids0, "พิมพ์")
+      const already = orders.filter((o) => ids1.includes(o.id) && o.labelPrinted)
+      if (already.length) {
+        const last = (o: Order) => [...(o.events ?? [])].reverse().find((e) => e.text.startsWith("พิมพ์ใบปะหน้า"))
+        toast.info(`${already.length} ออเดอร์พิมพ์ใบปะหน้าไปแล้ว — ไม่พิมพ์ซ้ำ`, {
+          description: already
+            .slice(0, 3)
+            .map((o) => `${o.id} โดย ${userById(last(o)?.by)?.name ?? "ระบบ"}`)
+            .join(", "),
+        })
+      }
+      const ids = ids1.filter((id) => !already.some((a) => a.id === id))
       setOrders((prev) =>
         prev.map((o) =>
           ids.includes(o.id)
             ? {
                 ...o,
                 labelPrinted: true,
+                claimedBy: me.id,
+                claimedAt: o.claimedAt ?? tick(),
+                events: [...(o.events ?? []), event("พิมพ์ใบปะหน้า")],
                 status: o.status === "to_process" ? "to_pack" : o.status,
                 tracking: o.tracking ?? `TH${(Number(o.id.slice(4)) * 7919 + 10000000).toString().slice(0, 8)}P`,
               }
             : o,
         ),
-      ),
+      )
+      return ids
+    },
     mergeOrders: (ids) => {
       const group = orders.filter((o) => ids.includes(o.id))
       if (!canMerge(group).ok) return null
+      if (guard(ids, "รวม").length !== ids.length) return null
       const [base, ...others] = [...group].sort((a, b) => a.createdAt - b.createdAt)
       const items = new Map<string, { sku: string; qty: number; price: number }>()
       for (const o of group) for (const it of o.items) {
@@ -304,6 +420,7 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
         mergedFrom: group.map((o) => o.id),
         tags: [...new Set([...group.flatMap((o) => o.tags), "รวมออเดอร์"])],
         note: `รวมจาก ${group.map((o) => o.platformOrderNo).join(", ")}`,
+        events: [...(base.events ?? []), event(`รวมออเดอร์ ${group.map((o) => o.id).join(" + ")}`)],
       }
       setOrders((prev) => [merged, ...prev.filter((o) => !ids.includes(o.id))].sort((a, b) => b.createdAt - a.createdAt))
       void others
@@ -312,7 +429,7 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
     addOrder: (o) => {
       const id = `OMS-${String(seq.current++).padStart(5, "0")}`
       const createdAt = tick()
-      setOrders((prev) => [{ ...o, id, createdAt, shipBy: createdAt + 2 * DAY }, ...prev])
+      setOrders((prev) => [{ ...o, id, createdAt, shipBy: createdAt + 2 * DAY, events: [{ at: createdAt, by: me.id, text: `สร้างออเดอร์จากแชท ${PLATFORMS[o.platform].name}` }] }, ...prev])
       if (RESERVING.includes(o.status)) record(o.items.map((it) => ({ sku: it.sku, kind: "sale" as const, availDelta: -it.qty, onHandDelta: 0, ref: id, platform: o.platform })))
       return id
     },
@@ -339,6 +456,7 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
         createdAt,
         shipBy: createdAt + 2 * DAY,
         tags: ["ออเดอร์ใหม่ (จำลอง)"],
+        events: [{ at: createdAt, by: SYSTEM, text: `ออเดอร์เข้าจาก ${PLATFORMS[platform].name} อัตโนมัติ` }],
         warehouse: "bkk",
       }
       setOrders((prev) => [order, ...prev])
@@ -368,7 +486,8 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
                 ...c,
                 unread: 0,
                 status: from === "agent" ? "pending" : c.status,
-                messages: [...c.messages, { id: `new-${clock.current}`, from, text, at: tick(), agent: from === "agent" ? (c.assignee ?? "คุณ (แอดมิน)") : undefined, ...extra }],
+                assignee: from === "agent" && !c.assignee ? me.name : c.assignee,
+                messages: [...c.messages, { id: `new-${clock.current}`, from, text, at: tick(), agent: from === "agent" ? me.name : undefined, ...extra }],
               }
             : c,
         ),

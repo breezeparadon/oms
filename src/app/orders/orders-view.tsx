@@ -4,7 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
-import { ChevronDown, ClipboardList, Combine, Download, Printer, RefreshCw, Search, X } from "lucide-react"
+import { Hand, Lock, ChevronDown, ClipboardList, Combine, Download, Printer, RefreshCw, Search, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -23,7 +23,8 @@ import { cn } from "@/lib/utils"
 
 export function OrdersView() {
   const params = useSearchParams()
-  const { orders, customers, printLabels, setStatus, mergeOrders } = useOms()
+  const { orders, customers, printLabels, setStatus, mergeOrders, claimOrders, lockedBy, me } = useOms()
+  const [owner, setOwner] = React.useState("all")
   const [statusParam, setStatusParam] = useQueryParam("status")
   const tab = (statusParam as OrderStatus | "all" | null) ?? "to_process"
   const setTab = (s: OrderStatus | "all") => setStatusParam(s)
@@ -47,6 +48,7 @@ export function OrdersView() {
       (platform === "all" || o.platform === platform) &&
       (shop === "all" || o.shopId === shop) &&
       (payment === "all" || o.payment === payment) &&
+      (owner === "all" || (owner === "mine" ? o.claimedBy === me.id : owner === "free" ? !o.claimedBy : !!o.claimedBy && o.claimedBy !== me.id)) &&
       (!q ||
         o.id.toLowerCase().includes(q.toLowerCase()) ||
         o.platformOrderNo.includes(q) ||
@@ -129,6 +131,16 @@ export function OrdersView() {
           options={[{ value: "all", label: "ทุกช่องทาง" }, ...PLATFORM_IDS.map((p) => ({ value: p, label: PLATFORMS[p].name }))]}
         />
         <FilterSelect value={shop} onChange={setShop} options={shopOptions} className="min-w-48" />
+        <FilterSelect
+          value={owner}
+          onChange={setOwner}
+          options={[
+            { value: "all", label: "ผู้รับงาน: ทุกคน" },
+            { value: "mine", label: "งานของฉัน" },
+            { value: "free", label: "ยังไม่มีคนรับ" },
+            { value: "others", label: "เพื่อนรับงานอยู่" },
+          ]}
+        />
         <FilterSelect value={payment} onChange={setPayment} options={[{ value: "all", label: "ทุกวิธีชำระ" }, ...Object.entries(PAYMENT_LABEL).map(([value, label]) => ({ value, label }))]} />
         {(platform !== "all" || shop !== "all" || payment !== "all" || q) && (
           <Button
@@ -153,12 +165,23 @@ export function OrdersView() {
           <Button
             size="sm"
             onClick={() => {
-              printLabels([...selected])
-              toast.success(`พิมพ์ใบปะหน้า ${selected.size} ใบ`, { description: "ออเดอร์ที่ “รอจัดการ” ถูกย้ายไป “รอแพ็ก”" })
+              const done = printLabels([...selected])
+              if (done.length) toast.success(`พิมพ์ใบปะหน้า ${done.length} ใบ`, { description: "ออเดอร์ที่ “รอจัดการ” ถูกย้ายไป “รอแพ็ก” และรับงานเป็นของคุณ" })
               clear()
             }}
           >
             <Printer /> พิมพ์ใบปะหน้า
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              const done = claimOrders([...selected])
+              if (done.length) toast.success(`รับงาน ${done.length} ออเดอร์แล้ว`, { description: "ทีมจะเห็นว่าคุณกำลังทำออเดอร์เหล่านี้" })
+              clear()
+            }}
+          >
+            <Hand /> รับงาน
           </Button>
           <Button size="sm" variant="outline" render={<Link href={`/fulfillment/picking?ids=${[...selected].join(",")}`} />}>
             <ClipboardList /> ใบหยิบสินค้า
@@ -175,8 +198,8 @@ export function OrdersView() {
                   <DropdownMenuItem
                     key={s}
                     onClick={() => {
-                      setStatus([...selected], s)
-                      toast.success(`เปลี่ยน ${selected.size} ออเดอร์เป็น “${STATUSES[s].label}”`)
+                      const done = setStatus([...selected], s)
+                      if (done.length) toast.success(`เปลี่ยน ${done.length} ออเดอร์เป็น “${STATUSES[s].label}”`)
                       clear()
                     }}
                   >
@@ -284,6 +307,12 @@ export function OrdersView() {
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={o.status} />
+                      {o.claimedBy && (
+                        <div className={cn("mt-1 flex items-center gap-1 text-[11px]", lockedBy(o) ? "text-amber-700 dark:text-amber-400" : "text-primary")}>
+                          {lockedBy(o) ? <Lock className="size-3" /> : <Hand className="size-3" />}
+                          {lockedBy(o) ? lockedBy(o)!.name : "งานของฉัน"}
+                        </div>
+                      )}
                       {o.labelPrinted && o.status === "to_pack" && <div className="mt-0.5 text-[11px] text-muted-foreground">พิมพ์ใบปะหน้าแล้ว</div>}
                     </TableCell>
                     <TableCell>

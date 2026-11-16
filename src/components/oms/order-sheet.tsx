@@ -2,17 +2,18 @@
 
 import Link from "next/link"
 import { toast } from "sonner"
-import { MessageCircle, Printer, Truck } from "lucide-react"
+import { Eye, Hand, History, Lock, MessageCircle, Printer, Truck } from "lucide-react"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
-import { PAYMENT_LABEL, RAW_STATUS, orderSubtotal, orderTotal, productBySku, shopById, type Order } from "@/lib/mock-data"
-import { baht, dateTime, dueIn } from "@/lib/format"
+import { can, userById, type StaffUser, PAYMENT_LABEL, RAW_STATUS, orderSubtotal, orderTotal, productBySku, shopById, type Order } from "@/lib/mock-data"
+import { ago, baht, dateTime, dueIn } from "@/lib/format"
+import { cn } from "@/lib/utils"
 import { CopyLinkButton, PlatformBadge, Pill, ProductThumb, StatusBadge, TierBadge } from "./bits"
 import { useOms } from "./store"
 
 export function OrderSheet({ order, onOpenChange }: { order: Order | null; onOpenChange: (open: boolean) => void }) {
-  const { customers, printLabels, setStatus, conversations } = useOms()
+  const { customers, printLabels, setStatus, conversations, me, lockedBy, claimOrders, releaseOrder, presence } = useOms()
   const o = order
   const c = o ? customers.find((x) => x.id === o.customerId) : undefined
   const conv = o ? conversations.find((x) => x.customerId === o.customerId) : undefined
@@ -31,6 +32,20 @@ export function OrderSheet({ order, onOpenChange }: { order: Order | null; onOpe
               </SheetDescription>
             </SheetHeader>
             <div className="space-y-5 px-4 pb-6 text-sm">
+              <WorkBanner
+                lock={lockedBy(o)}
+                mine={o.claimedBy === me.id}
+                since={o.claimedAt}
+                viewing={presence(`order:${o.id}`)?.user}
+                closed={!["unpaid", "to_process", "to_pack"].includes(o.status)}
+                onClaim={() => {
+                  if (claimOrders([o.id]).length) toast.success(`รับงาน ${o.id} แล้ว`)
+                }}
+                onRelease={() => {
+                  releaseOrder(o.id)
+                  toast(`ปล่อยงาน ${o.id} คืนให้ทีมแล้ว`)
+                }}
+              />
               <div className="grid grid-cols-2 gap-3 rounded-lg border p-3">
                 <div>
                   <div className="text-xs text-muted-foreground">ช่องทาง / ร้าน</div>
@@ -125,11 +140,11 @@ export function OrderSheet({ order, onOpenChange }: { order: Order | null; onOpe
               )}
 
               <div className="flex flex-wrap gap-2">
-                {["to_process", "to_pack"].includes(o.status) && (
+                {["to_process", "to_pack"].includes(o.status) && !o.labelPrinted && (
                   <Button
+                    disabled={!!lockedBy(o) || !can(me.role, "order.print")}
                     onClick={() => {
-                      printLabels([o.id])
-                      toast.success(`พิมพ์ใบปะหน้า ${o.id} แล้ว`)
+                      if (printLabels([o.id]).length) toast.success(`พิมพ์ใบปะหน้า ${o.id} แล้ว`)
                     }}
                   >
                     <Printer /> พิมพ์ใบปะหน้า
@@ -138,9 +153,10 @@ export function OrderSheet({ order, onOpenChange }: { order: Order | null; onOpe
                 {o.status === "to_pack" && (
                   <Button
                     variant="outline"
+                    disabled={!!lockedBy(o) || !can(me.role, "order.pack")}
+                    title={!can(me.role, "order.pack") ? "เฉพาะทีมคลัง/ผู้จัดการ" : undefined}
                     onClick={() => {
-                      setStatus([o.id], "to_ship")
-                      toast.success("แพ็กเสร็จ รอขนส่งเข้ารับ")
+                      if (setStatus([o.id], "to_ship").length) toast.success("แพ็กเสร็จ รอขนส่งเข้ารับ")
                     }}
                   >
                     แพ็กเสร็จ
@@ -151,6 +167,26 @@ export function OrderSheet({ order, onOpenChange }: { order: Order | null; onOpe
                     <MessageCircle /> เปิดแชทลูกค้า
                   </Button>
                 )}
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <History className="size-3.5" /> ประวัติการทำงาน
+                </div>
+                <ol className="relative space-y-3 border-l pl-4">
+                  {[...(o.events ?? [])].reverse().map((e, i) => {
+                    const u = userById(e.by)
+                    return (
+                      <li key={i} className="relative">
+                        <span className={cn("absolute top-1 -left-[21px] size-2.5 rounded-full ring-2 ring-background", i === 0 ? "bg-primary" : "bg-muted-foreground/40")} />
+                        <div className="text-sm">
+                          <span className="font-medium">{u ? u.name : "ระบบ"}</span> {e.text}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground">{dateTime(e.at)}</div>
+                      </li>
+                    )
+                  })}
+                </ol>
               </div>
             </div>
           </>
@@ -165,6 +201,63 @@ function Row({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="flex justify-between gap-3">
       <span className="text-muted-foreground">{label}</span>
       <span className="text-right">{value}</span>
+    </div>
+  )
+}
+
+/** Who is working on this order — prevents two admins doing the same job */
+export function WorkBanner({
+  lock,
+  mine,
+  since,
+  viewing,
+  closed,
+  onClaim,
+  onRelease,
+}: {
+  lock?: StaffUser
+  mine: boolean
+  since?: number
+  viewing?: StaffUser
+  closed: boolean
+  onClaim: () => void
+  onRelease: () => void
+}) {
+  return (
+    <div className="space-y-2">
+      {viewing && (
+        <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+          <span className="relative flex size-2">
+            <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+          </span>
+          <Eye className="size-3.5" /> {viewing.name} กำลังเปิดดูออเดอร์นี้อยู่
+        </div>
+      )}
+      {!closed &&
+        (lock ? (
+          <div className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+            <Lock className="size-4 shrink-0" />
+            <span className="flex-1">
+              <b>{lock.name}</b> รับงานนี้อยู่ {since ? `(${ago(since)})` : ""} — ปุ่มพิมพ์/แพ็กถูกล็อกไว้ กันทำงานซ้ำ
+            </span>
+          </div>
+        ) : mine ? (
+          <div className="flex items-center gap-2 rounded-lg bg-accent px-3 py-2 text-xs">
+            <Hand className="size-4 shrink-0 text-primary" />
+            <span className="flex-1">คุณรับงานนี้อยู่ — ทีมจะเห็นว่าคุณกำลังทำ</span>
+            <Button size="xs" variant="ghost" onClick={onRelease}>
+              ปล่อยงาน
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
+            <span className="flex-1">ยังไม่มีใครรับงานนี้</span>
+            <Button size="xs" onClick={onClaim}>
+              <Hand /> รับงาน
+            </Button>
+          </div>
+        ))}
     </div>
   )
 }

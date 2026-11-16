@@ -18,7 +18,7 @@ import { AddProductSheet, ImportListingsSheet } from "@/components/oms/product-t
 import { Pager } from "@/components/oms/pager"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { NumberInput } from "@/components/oms/number-input"
-import { PLATFORM_IDS, PLATFORMS, type PlatformId, type Product } from "@/lib/mock-data"
+import { can, PLATFORM_IDS, PLATFORMS, type PlatformId, type Product } from "@/lib/mock-data"
 import { ago, baht, num } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
@@ -32,7 +32,7 @@ export default function InventoryPage() {
 
 function InventoryView() {
   const params = useSearchParams()
-  const { products, reserved, adjustStock, syncListing, platformListings } = useOms()
+  const { products, reserved, adjustStock, syncListing, platformListings, me } = useOms()
   const [addOpen, setAddOpen] = React.useState(false)
   const [importOpen, setImportOpen] = React.useState(false)
   const [detailSku, setDetailSku] = useQueryParam("sku")
@@ -78,7 +78,7 @@ function InventoryView() {
         description="1 SKU กลางผูกกับทุกแพลตฟอร์ม — ขายได้ที่ไหน ระบบตัดสต๊อกกลางและอัปเดตทุกช่องทางทันที กันขายเกิน"
         actions={
           <>
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
+          <Button variant="outline" disabled={!can(me.role, "product.import")} title={!can(me.role, "product.import") ? "เฉพาะผู้จัดการ" : undefined} onClick={() => setImportOpen(true)}>
             <DownloadCloud /> ดึงสินค้าจากแพลตฟอร์ม
             {platformListings.length > 0 && <span className="rounded-full bg-rose-500 px-1.5 text-[10px] font-semibold text-white">{platformListings.length}</span>}
           </Button>
@@ -90,7 +90,7 @@ function InventoryView() {
           >
             <RefreshCw /> ซิงค์สต๊อกทุกช่องทาง
           </Button>
-          <Button onClick={() => setAddOpen(true)}>
+          <Button disabled={!can(me.role, "product.create")} onClick={() => setAddOpen(true)}>
             <Plus /> เพิ่มสินค้า
           </Button>
           </>
@@ -192,6 +192,8 @@ function InventoryView() {
                       <Button
                         size="sm"
                         variant="outline"
+                        disabled={!can(me.role, "stock.adjust")}
+                        title={!can(me.role, "stock.adjust") ? "เฉพาะทีมคลัง/ผู้จัดการ" : undefined}
                         onClick={() => {
                           setEditing(p)
                           setDelta(0)

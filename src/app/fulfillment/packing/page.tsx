@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { CheckCircle2, Circle, PackageCheck, ScanBarcode } from "lucide-react"
+import { CheckCircle2, Circle, Lock, PackageCheck, ScanBarcode } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -12,7 +12,7 @@ import { productBySku, shopById } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
 
 export default function PackingPage() {
-  const { orders, customers, setStatus, printLabels } = useOms()
+  const { orders, customers, setStatus, printLabels, lockedBy, claimOrders } = useOms()
   const queue = orders.filter((o) => o.status === "to_pack" || o.status === "to_process")
   const [code, setCode] = React.useState("")
   const [activeId, setActiveId] = React.useState<string | null>(null)
@@ -26,6 +26,9 @@ export default function PackingPage() {
     const o = orders.find((x) => x.id === v || x.tracking === v || x.platformOrderNo === raw.trim())
     if (!o) return toast.error(`ไม่พบออเดอร์ “${raw}”`)
     if (!["to_pack", "to_process"].includes(o.status)) return toast.warning(`${o.id} ไม่ได้อยู่ในสถานะรอแพ็ก`)
+    const holder = lockedBy(o)
+    if (holder) return toast.error(`${o.id} — ${holder.name} รับงานนี้อยู่`, { description: "ข้ามไปออเดอร์ถัดไป เพื่อไม่ให้ทำงานซ้ำกัน" })
+    claimOrders([o.id])
     setActiveId(o.id)
     setScanned({})
     setCode("")
@@ -125,7 +128,7 @@ export default function PackingPage() {
                     disabled={!complete}
                     onClick={() => {
                       if (!active.labelPrinted) printLabels([active.id])
-                      setStatus([active.id], "to_ship")
+                      if (!setStatus([active.id], "to_ship").length) return
                       setPackedCount((n) => n + 1)
                       toast.success(`แพ็ก ${active.id} เสร็จ`, { description: "พิมพ์ใบปะหน้าแล้ว → สถานะ “รอขนส่งรับ”" })
                       setActiveId(null)
@@ -151,9 +154,16 @@ export default function PackingPage() {
           </CardHeader>
           <CardContent className="max-h-[560px] space-y-1 overflow-y-auto">
             {queue.slice(0, 40).map((o) => (
-              <button key={o.id} onClick={() => openOrder(o.id)} className={cn("flex w-full items-center justify-between rounded-lg p-2 text-left text-sm hover:bg-muted", activeId === o.id && "bg-muted")}>
+              <button key={o.id} onClick={() => openOrder(o.id)} className={cn("flex w-full items-center justify-between rounded-lg p-2 text-left text-sm hover:bg-muted", activeId === o.id && "bg-muted", lockedBy(o) && "opacity-60")}>
                 <span className="font-medium">{o.id}</span>
-                <span className="text-xs text-muted-foreground">{o.items.reduce((s, i) => s + i.qty, 0)} ชิ้น</span>
+                <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                  {lockedBy(o) && (
+                    <span className="flex items-center gap-1 rounded bg-amber-100 px-1.5 text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+                      <Lock className="size-3" /> {lockedBy(o)!.name}
+                    </span>
+                  )}
+                  {o.items.reduce((s, i) => s + i.qty, 0)} ชิ้น
+                </span>
               </button>
             ))}
           </CardContent>

@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { toast } from "sonner"
-import { ArrowLeft, Check, Megaphone, PackageSearch, Radio, ShoppingCart, Ticket, Image as ImageIcon, MessageSquareReply, Paperclip, Search, Send, ShoppingBag, Sparkles, Tag, UserRound } from "lucide-react"
+import { Hand, Lock, Shuffle, ArrowLeft, Check, Megaphone, PackageSearch, Radio, ShoppingCart, Ticket, Image as ImageIcon, MessageSquareReply, Paperclip, Search, Send, ShoppingBag, Sparkles, Tag, UserRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -11,14 +11,16 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { CopyLinkButton, PlatformDot, Pill, ProductThumb, StatusBadge, TierBadge, initials } from "@/components/oms/bits"
 import { useQueryParam } from "@/components/oms/use-query-param"
 import { useOms } from "@/components/oms/store"
-import { AGENTS, CHAT_LABELS, CHAT_SOURCE, PLATFORMS, PLATFORM_IDS, QUICK_REPLIES, messagePreview, productBySku, orderTotal, shopById, type Conversation } from "@/lib/mock-data"
+import { UserAvatar } from "@/components/oms/user-menu"
+import { Switch } from "@/components/ui/switch"
+import { can, userByName, AGENTS, CHAT_LABELS, CHAT_SOURCE, PLATFORMS, PLATFORM_IDS, QUICK_REPLIES, messagePreview, productBySku, orderTotal, shopById, type Conversation } from "@/lib/mock-data"
 import { ago, baht, dateOnly, timeOnly } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-type Filter = "all" | "unread" | "pending" | "unassigned" | "closed"
+type Filter = "all" | "mine" | "unread" | "pending" | "unassigned" | "closed"
 
 export function InboxView() {
-  const { conversations, customers, orders, products, sendMessage, updateConversation } = useOms()
+  const { me, presence, takeOver, autoAssign, setAutoAssign, assignLeastLoaded, conversations, customers, orders, products, sendMessage, updateConversation } = useOms()
   const [activeId, setActiveId] = useQueryParam("c")
   const [platform, setPlatform] = React.useState("all")
   const [filter, setFilter] = React.useState<Filter>("all")
@@ -32,6 +34,7 @@ export function InboxView() {
   const list = sorted.filter((c) => {
     if (platform !== "all" && c.platform !== platform) return false
     if (q && !custMap.get(c.customerId)!.name.includes(q) && !c.messages.some((m) => m.text.includes(q))) return false
+    if (filter === "mine") return c.assignee === me.name && c.status !== "closed"
     if (filter === "unread") return c.unread > 0 && c.status !== "closed"
     if (filter === "pending") return c.status === "pending"
     if (filter === "unassigned") return !c.assignee && c.status !== "closed"
@@ -41,6 +44,8 @@ export function InboxView() {
   const active = conversations.find((c) => c.id === activeId) ?? null
   const customer = active ? custMap.get(active.customerId)! : null
   const custOrders = customer ? orders.filter((o) => o.customerId === customer.id) : []
+  const viewing = active ? presence(`conv:${active.id}`) : undefined
+  const lockedTo = active && active.assignee && active.assignee !== me.name && active.status !== "closed" ? active.assignee : null
   const spend = custOrders.filter((o) => o.status !== "cancelled").reduce((s, o) => s + orderTotal(o), 0)
 
   React.useEffect(() => {
@@ -55,6 +60,7 @@ export function InboxView() {
 
   const counts: Record<Filter, number> = {
     all: conversations.filter((c) => c.status !== "closed").length,
+    mine: conversations.filter((c) => c.assignee === me.name && c.status !== "closed").length,
     unread: conversations.filter((c) => c.unread > 0 && c.status !== "closed").length,
     pending: conversations.filter((c) => c.status === "pending").length,
     unassigned: conversations.filter((c) => !c.assignee && c.status !== "closed").length,
@@ -72,7 +78,10 @@ export function InboxView() {
     const target = sorted.find((c) => c.status !== "closed" && c.id !== activeId) ?? sorted[0]
     sendMessage(target.id, "สวัสดีค่ะ สอบถามสินค้าหน่อยค่ะ", "customer")
     updateConversation(target.id, { unread: (target.unread || 0) + 1, status: "open" })
-    toast(`ข้อความใหม่จาก ${PLATFORMS[target.platform].name}`, { description: custMap.get(target.customerId)!.name })
+    if (!target.assignee && autoAssign) {
+      const who = assignLeastLoaded(target.id)
+      toast(`แชทใหม่จาก ${PLATFORMS[target.platform].name} → มอบหมายให้ ${who}`, { description: `${custMap.get(target.customerId)!.name} · กระจายงานอัตโนมัติ (คนที่งานค้างน้อยสุด)` })
+    } else toast(`ข้อความใหม่จาก ${PLATFORMS[target.platform].name}`, { description: `${custMap.get(target.customerId)!.name}${target.assignee ? ` · ผู้ดูแล ${target.assignee}` : ""}` })
   }
 
   return (
@@ -86,6 +95,14 @@ export function InboxView() {
               <Sparkles /> จำลอง
             </Button>
           </div>
+          <label className="flex cursor-pointer items-center justify-between rounded-lg bg-muted/60 px-2.5 py-1.5 text-xs">
+            <span>
+              <Shuffle className="mr-1 inline size-3.5" />
+              กระจายแชทใหม่อัตโนมัติ
+              <span className="block text-[10px] text-muted-foreground">ให้แอดมินที่งานค้างน้อยสุด</span>
+            </span>
+            <Switch checked={autoAssign} onCheckedChange={setAutoAssign} />
+          </label>
           <div className="relative">
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ / ข้อความ" className="pl-8" />
@@ -104,6 +121,7 @@ export function InboxView() {
             {(
               [
                 ["all", "เปิดอยู่"],
+                ["mine", "ของฉัน"],
                 ["unread", "ยังไม่ตอบ"],
                 ["unassigned", "ไม่มีคนดูแล"],
                 ["pending", "รอลูกค้า"],
@@ -120,8 +138,19 @@ export function InboxView() {
           {list.map((c) => {
             const cust = custMap.get(c.customerId)!
             const last = c.messages[c.messages.length - 1]
+            const seen = presence(`conv:${c.id}`)
+            const owner = userByName(c.assignee)
+            const isActive = activeId === c.id
             return (
-              <button key={c.id} onClick={() => setActiveId(c.id)} className={cn("flex w-full items-start gap-3 border-b px-3 py-2.5 text-left hover:bg-muted/60", activeId === c.id && "bg-muted")}>
+              <button
+                key={c.id}
+                onClick={() => setActiveId(c.id)}
+                aria-current={isActive ? "true" : undefined}
+                className={cn(
+                  "relative flex w-full items-start gap-3 border-b px-3 py-2.5 text-left transition-colors",
+                  isActive ? "bg-accent before:absolute before:inset-y-0 before:left-0 before:w-1 before:bg-brand-gradient" : "hover:bg-muted/60",
+                )}
+              >
                 <div className="relative">
                   <div className="flex size-10 items-center justify-center rounded-full bg-gradient-to-br from-slate-200 to-slate-300 font-semibold text-slate-700 dark:from-slate-700 dark:to-slate-800 dark:text-slate-200">{initials(cust.name)}</div>
                   <PlatformDot platform={c.platform} className="absolute -right-1 -bottom-1 size-4 text-[7px] ring-2 ring-background" />
@@ -132,7 +161,7 @@ export function InboxView() {
                     <span className="shrink-0 text-[11px] text-muted-foreground">{ago(last.at).replace("ที่แล้ว", "")}</span>
                   </div>
                   <div className={cn("truncate text-xs", c.unread ? "text-foreground" : "text-muted-foreground")}>
-                    {last.from === "agent" && "คุณ: "}
+                    {last.from === "agent" && (last.agent === me.name ? "คุณ: " : `${last.agent?.replace("แอดมิน", "") ?? "แอดมิน"}: `)}
                     {messagePreview(last)}
                   </div>
                   <div className="mt-1 flex items-center gap-1">
@@ -142,8 +171,24 @@ export function InboxView() {
                       </span>
                     ))}
                     {!c.assignee && c.status !== "closed" && <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-800 dark:bg-amber-950 dark:text-amber-300">ไม่มีคนดูแล</span>}
-                    {c.unread > 0 && <span className="ml-auto rounded-full bg-rose-500 px-1.5 text-[10px] font-semibold text-white">{c.unread}</span>}
+                    <span className="ml-auto flex items-center gap-1">
+                      {owner && (
+                        <span title={`ผู้ดูแล: ${owner.name}`}>
+                          <UserAvatar short={owner.short} role={owner.role} className={cn("size-5 text-[9px]", owner.id === me.id && "ring-2 ring-primary/40")} />
+                        </span>
+                      )}
+                      {c.unread > 0 && <span className="rounded-full bg-rose-500 px-1.5 text-[10px] font-semibold text-white">{c.unread}</span>}
+                    </span>
                   </div>
+                  {seen && (
+                    <div className="mt-1 flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                      <span className="relative flex size-2">
+                        <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                        <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+                      </span>
+                      {seen.user.name} {seen.typing ? "กำลังพิมพ์…" : "กำลังเปิดอยู่"}
+                    </div>
+                  )}
                 </div>
               </button>
             )
@@ -254,6 +299,28 @@ export function InboxView() {
               )}
             </div>
 
+            {viewing && (
+              <div className="flex items-center gap-2 border-t bg-emerald-50 px-4 py-1.5 text-xs text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                <span className="relative flex size-2">
+                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                  <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+                </span>
+                {viewing.user.name} {viewing.typing ? "กำลังพิมพ์ตอบ…" : "กำลังเปิดแชทนี้อยู่"}
+              </div>
+            )}
+            {lockedTo ? (
+              <div className="flex flex-col items-center gap-2 border-t bg-amber-50 p-4 text-center text-sm text-amber-900 sm:flex-row sm:text-left dark:bg-amber-950/40 dark:text-amber-200">
+                <Lock className="size-5 shrink-0" />
+                <div className="flex-1">
+                  แชทนี้ <b>{lockedTo}</b> ดูแลอยู่ — ช่องตอบถูกล็อก เพื่อไม่ให้ลูกค้าได้คำตอบซ้ำหรือขัดกัน
+                </div>
+                {can(me.role, "chat.takeover") && (
+                  <Button size="sm" variant="outline" onClick={() => takeOver(active.id)}>
+                    <Hand /> ขอรับช่วงต่อ
+                  </Button>
+                )}
+              </div>
+            ) : (
             <div className="border-t bg-background p-3">
               <div className="no-scrollbar mb-2 flex gap-1 overflow-x-auto">
                 {QUICK_REPLIES.map((r) => (
@@ -290,7 +357,9 @@ export function InboxView() {
                   <Send />
                 </Button>
               </form>
+              {!active.assignee && <div className="mt-1.5 text-[11px] text-muted-foreground">แชทนี้ยังไม่มีผู้ดูแล — ตอบแล้วจะเป็นของคุณอัตโนมัติ</div>}
             </div>
+            )}
           </>
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">

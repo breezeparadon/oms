@@ -411,7 +411,12 @@ export type Order = {
   tags: string[]
   warehouse: "bkk" | "cnx"
   note?: string
+  /** staff user id currently working on this order (soft lock) */
+  claimedBy?: string
+  claimedAt?: number
+  events?: OrderEvent[]
 }
+export type OrderEvent = { at: number; by: string; text: string }
 export const PAYMENT_LABEL: Record<Order["payment"], string> = { prepaid: "ชำระผ่านแพลตฟอร์ม", cod: "เก็บเงินปลายทาง (COD)", transfer: "โอนเงิน" }
 
 export const orderSubtotal = (o: Order) => o.items.reduce((s, i) => s + i.qty * i.price, 0)
@@ -762,3 +767,84 @@ export const INITIAL_PLATFORM_LISTINGS: PlatformListing[] = (() => {
   )
   return out
 })()
+
+
+// ---------- Staff users & roles (demo login switcher) ----------
+export type Role = "owner" | "sales" | "warehouse" | "accounting"
+export const ROLES: Record<Role, { label: string; desc: string; className: string }> = {
+  owner: { label: "เจ้าของ / ผู้จัดการ", desc: "เห็นทุกเมนู ตั้งค่า เชื่อมต่อช่องทาง ดูรายงาน", className: "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300" },
+  sales: { label: "แอดมินขาย", desc: "ตอบแชท ดูแลลูกค้า สร้างออเดอร์จากแชท", className: "bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300" },
+  warehouse: { label: "คลัง / แพ็กของ", desc: "หยิบ แพ็ก พิมพ์ใบปะหน้า รับของเข้า-คืน", className: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300" },
+  accounting: { label: "บัญชี", desc: "คืนเงิน ตรวจสลิป รายงานยอดขาย/กำไร", className: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300" },
+}
+export type StaffUser = { id: string; name: string; short: string; role: Role }
+export const USERS: StaffUser[] = [
+  { id: "u-owner", name: "คุณบอส (ผู้จัดการ)", short: "บอ", role: "owner" },
+  { id: "u-yok", name: "แอดมินหยก", short: "หย", role: "sales" },
+  { id: "u-breeze", name: "แอดมินบรีส", short: "บร", role: "sales" },
+  { id: "u-nook", name: "แอดมินนุ๊ก", short: "นุ", role: "sales" },
+  { id: "u-keng", name: "พี่เก่ง (คลัง)", short: "เก", role: "warehouse" },
+  { id: "u-fah", name: "น้องฟ้า (แพ็ก)", short: "ฟ้", role: "warehouse" },
+  { id: "u-nan", name: "คุณแนน (บัญชี)", short: "แน", role: "accounting" },
+]
+export const userById = (id?: string) => USERS.find((u) => u.id === id)
+export const userByName = (name?: string | null) => USERS.find((u) => u.name === name)
+export const SYSTEM = "system"
+
+// Which pages each role can open (first match by prefix)
+export const ROUTE_ROLES: [string, Role[]][] = [
+  ["/orders/new", ["owner", "sales"]],
+  ["/orders/merge", ["owner", "sales", "warehouse"]],
+  ["/orders", ["owner", "sales", "warehouse", "accounting"]],
+  ["/fulfillment", ["owner", "warehouse"]],
+  ["/inventory", ["owner", "warehouse", "sales"]],
+  ["/inbox", ["owner", "sales"]],
+  ["/customers", ["owner", "sales", "accounting"]],
+  ["/returns", ["owner", "warehouse", "accounting", "sales"]],
+  ["/reports", ["owner", "accounting"]],
+  ["/channels", ["owner"]],
+  ["/", ["owner", "sales", "warehouse", "accounting"]],
+]
+export const canOpen = (role: Role, path: string) => (ROUTE_ROLES.find(([p]) => (p === "/" ? path === "/" : path === p || path.startsWith(p + "/") || path.startsWith(p + "?"))) ?? ["", []])[1].includes(role)
+
+// Fine-grained actions
+export const PERMS = {
+  "stock.adjust": ["owner", "warehouse"],
+  "product.create": ["owner", "sales"],
+  "product.import": ["owner"],
+  "order.create": ["owner", "sales"],
+  "order.pack": ["owner", "warehouse"],
+  "order.print": ["owner", "warehouse", "sales"],
+  "return.approve": ["owner", "sales"],
+  "return.receive": ["owner", "warehouse"],
+  "return.refund": ["owner", "accounting"],
+  "chat.takeover": ["owner", "sales"],
+} satisfies Record<string, Role[]>
+export type Perm = keyof typeof PERMS
+export const can = (role: Role, perm: Perm) => (PERMS[perm] as Role[]).includes(role)
+
+// ---------- Seed collaboration state: activity log + who is working on what ----------
+const SALES_IDS = ["u-yok", "u-breeze", "u-nook"]
+const WH_IDS = ["u-keng", "u-fah"]
+for (const o of INITIAL_ORDERS) {
+  const ev: OrderEvent[] = [{ at: o.createdAt, by: SYSTEM, text: PLATFORMS[o.platform].kind === "marketplace" ? `ออเดอร์เข้าจาก ${PLATFORMS[o.platform].name} อัตโนมัติ` : `สร้างออเดอร์จากแชท ${PLATFORMS[o.platform].name}` }]
+  if (o.labelPrinted) ev.push({ at: o.createdAt + int(1, 5) * HOUR, by: pick(SALES_IDS), text: "พิมพ์ใบปะหน้า" })
+  if (["to_ship", "shipping", "delivered", "returned"].includes(o.status)) ev.push({ at: o.createdAt + int(6, 10) * HOUR, by: pick(WH_IDS), text: "แพ็กเสร็จ ส่งมอบขนส่ง" })
+  if (o.status === "cancelled") ev.push({ at: o.createdAt + int(1, 8) * HOUR, by: SYSTEM, text: "ผู้ซื้อยกเลิกคำสั่งซื้อ" })
+  o.events = ev.filter((e) => e.at < NOW)
+}
+// a few orders are already being handled by teammates (soft-locked)
+INITIAL_ORDERS.filter((o) => o.status === "to_process")
+  .slice(2, 8)
+  .forEach((o, i) => {
+    o.claimedBy = SALES_IDS[1 + (i % 2)]
+    o.claimedAt = NOW - int(2, 25) * MIN
+    o.events = [...(o.events ?? []), { at: o.claimedAt, by: o.claimedBy, text: "รับงาน" }]
+  })
+INITIAL_ORDERS.filter((o) => o.status === "to_pack")
+  .slice(0, 4)
+  .forEach((o, i) => {
+    o.claimedBy = WH_IDS[i % 2]
+    o.claimedAt = NOW - int(3, 40) * MIN
+    o.events = [...(o.events ?? []), { at: o.claimedAt, by: o.claimedBy, text: "รับงานแพ็ก" }]
+  })

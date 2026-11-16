@@ -13,9 +13,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { CopyLinkButton, Kpi, PageHeader, PlatformBadge, PlatformDot, Pill, ProductThumb, TierBadge } from "@/components/oms/bits"
 import { useQueryParam } from "@/components/oms/use-query-param"
 import { useOms } from "@/components/oms/store"
-import { PAYMENT_LABEL, RETURN_FLOW, RETURN_STATUS, RETURN_TYPE, productBySku, shopById, type ReturnCase } from "@/lib/mock-data"
+import { can, PERMS, ROLES, type Perm, PAYMENT_LABEL, RETURN_FLOW, RETURN_STATUS, RETURN_TYPE, productBySku, shopById, type ReturnCase } from "@/lib/mock-data"
 import { baht, dateOnly, dateTime, num } from "@/lib/format"
 import { cn } from "@/lib/utils"
+
+const stepPerm = (r: ReturnCase): Perm =>
+  r.status === "in_transit" ? "return.receive" : r.status === "received" || (r.type === "refund_only" && r.status === "approved") ? "return.refund" : "return.approve"
 
 const NEXT: Partial<Record<ReturnCase["status"], { to: ReturnCase["status"]; label: string }>> = {
   requested: { to: "approved", label: "อนุมัติคำขอคืน" },
@@ -33,7 +36,7 @@ export default function ReturnsPage() {
 }
 
 function ReturnsView() {
-  const { returns, orders, customers, conversations, updateReturn, adjustStock } = useOms()
+  const { returns, orders, customers, conversations, updateReturn, adjustStock, me } = useOms()
   const [filter, setFilter] = React.useState<ReturnCase["status"] | "all">("all")
   const [openId, setOpenId] = useQueryParam("id")
   const list = returns.filter((r) => filter === "all" || r.status === filter)
@@ -272,11 +275,11 @@ function ReturnsView() {
                 {/* Actions */}
                 <div className="flex flex-wrap gap-2">
                   {NEXT[open.status] && (
-                    <Button onClick={() => advance(open)}>
+                    <Button disabled={!can(me.role, stepPerm(open))} title={!can(me.role, stepPerm(open)) ? `ต้องเป็น ${PERMS[stepPerm(open)].map((r) => ROLES[r].label).join(" / ")}` : undefined} onClick={() => advance(open)}>
                       <Check /> {open.type === "refund_only" && open.status === "approved" ? "คืนเงินลูกค้า" : NEXT[open.status]!.label}
                     </Button>
                   )}
-                  {open.status === "requested" && (
+                  {open.status === "requested" && can(me.role, "return.approve") && (
                     <Button
                       variant="destructive"
                       onClick={() => {
