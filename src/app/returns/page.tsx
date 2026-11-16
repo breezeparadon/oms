@@ -53,7 +53,7 @@ function ReturnsView() {
     const to = r.type === "refund_only" && r.status === "approved" ? "refunded" : next.to
     updateReturn(r.id, { status: to, returnTracking: to === "in_transit" ? `TH${r.id.slice(3)}8842R` : r.returnTracking })
     if (to === "received" && r.restock && o) {
-      r.items.forEach((i) => adjustStock(i.sku, o.warehouse, i.qty))
+      r.items.forEach((i) => adjustStock(i.sku, o.warehouse, i.qty, { kind: "return", ref: r.id }))
       toast.success("รับของคืนแล้ว — คืนเข้าสต๊อกอัตโนมัติ", { description: r.items.map((i) => `${productBySku(i.sku).name.slice(0, 30)}… +${i.qty}`).join(", ") })
     } else if (to === "received") {
       toast.success("รับของคืนแล้ว — สินค้าเสียหาย ไม่คืนเข้าสต๊อก (ตัดเป็นของเสีย)")

@@ -10,14 +10,14 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { FilterSelect, Kpi, PageHeader, PlatformDot, ProductThumb } from "@/components/oms/bits"
 import { useOms } from "@/components/oms/store"
-import { productBySku } from "@/lib/mock-data"
+import { PRODUCT_GROUPS, productBySku } from "@/lib/mock-data"
 import { NOW } from "@/lib/mock-data"
 import { dateTime, num } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 const binOf = (sku: string) => {
   const g = productBySku(sku).group
-  const zone = g === "ความงาม" ? "A" : g === "อาหารเสริม" ? "B" : "Z"
+  const zone = String.fromCharCode(65 + Math.max(0, PRODUCT_GROUPS.indexOf(g)))
   const n = [...sku].reduce((s, ch) => s + ch.charCodeAt(0), 0)
   return `${zone}-${String((n % 12) + 1).padStart(2, "0")}-${(n % 4) + 1}`
 }
