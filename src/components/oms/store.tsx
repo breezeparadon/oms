@@ -152,7 +152,8 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
   const clock = React.useRef(0) // monotonic offset so new items sort after seed data
 
   const [movements, setMovements] = React.useState<Movement[]>(seedMovements)
-  const [meId, setMeId] = React.useState("u-yok")
+  const DEFAULT_USER = "u-breeze" // demo opens as the manager
+  const [meId, setMeId] = React.useState(DEFAULT_USER)
   const [autoAssign, setAutoAssign] = React.useState(true)
   // remember the demo user per browser (sessionStorage only — not a real login)
   React.useEffect(() => {
@@ -162,11 +163,11 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
       if (saved && USERS.some((u) => u.id === saved)) setMeId(saved)
     } catch {}
   }, [])
-  const me = USERS.find((u) => u.id === meId) ?? USERS[1]
+  const me = USERS.find((u) => u.id === meId) ?? USERS.find((u) => u.id === DEFAULT_USER)!
   // simulated teammates' presence: who has which chat/order open right now
   const [presenceMap] = React.useState<Record<string, { userId: string; typing: boolean }>>(() => {
     const m: Record<string, { userId: string; typing: boolean }> = {}
-    INITIAL_CONVERSATIONS.filter((c) => c.status !== "closed" && c.assignee && c.assignee !== "แอดมินหยก")
+    INITIAL_CONVERSATIONS.filter((c) => c.status !== "closed" && c.assignee && c.assignee !== "แอดมินบรีส")
       .slice(0, 6)
       .forEach((c, i) => (m[`conv:${c.id}`] = { userId: userByName(c.assignee)!.id, typing: i % 3 === 0 }))
     INITIAL_ORDERS.filter((o) => o.claimedBy)

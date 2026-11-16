@@ -842,7 +842,7 @@ for (const o of INITIAL_ORDERS) {
 INITIAL_ORDERS.filter((o) => o.status === "to_process")
   .slice(2, 8)
   .forEach((o, i) => {
-    o.claimedBy = SALES_IDS[1 + (i % 2)]
+    o.claimedBy = ["u-yok", "u-nook"][i % 2]
     o.claimedAt = NOW - int(2, 25) * MIN
     o.events = [...(o.events ?? []), { at: o.claimedAt, by: o.claimedBy, text: "รับงาน" }]
   })
