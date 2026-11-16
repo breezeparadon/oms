@@ -159,7 +159,7 @@ export function GlobalSearch() {
           const avail = x.stock.bkk + x.stock.cnx - reserved(x.sku)
           return {
             key: `p-${x.sku}`,
-            href: `/inventory?q=${encodeURIComponent(x.sku)}`,
+            href: `/inventory?sku=${encodeURIComponent(x.sku)}`,
             node: (
               <>
                 <ProductThumb sku={x.sku} className="size-8" />

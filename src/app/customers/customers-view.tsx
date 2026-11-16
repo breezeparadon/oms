@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { Ban, Crown, MessageCircle, Search, ShoppingBag, Users, UserPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -13,27 +12,24 @@ import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { FilterSelect, Kpi, PageHeader, PlatformDot, Pill, ProductThumb, StatusBadge, TierBadge, initials } from "@/components/oms/bits"
+import { CopyLinkButton, FilterSelect, Kpi, PageHeader, PlatformDot, Pill, ProductThumb, StatusBadge, TierBadge, initials } from "@/components/oms/bits"
+import { useQueryParam } from "@/components/oms/use-query-param"
 import { useOms } from "@/components/oms/store"
+import { Pager } from "@/components/oms/pager"
 import { DAY, NOW, PLATFORMS, PLATFORM_IDS, TIERS, orderTotal, productBySku, type Tier } from "@/lib/mock-data"
 import { ago, baht, dateOnly, dateTime, num } from "@/lib/format"
 
-const PAGE = 25
 
 export function CustomersView() {
-  const params = useSearchParams()
   const { customers, orders, conversations, updateCustomer } = useOms()
   const [q, setQ] = React.useState("")
   const [platform, setPlatform] = React.useState("all")
   const [tier, setTier] = React.useState("all")
   const [page, setPage] = React.useState(0)
-  const [openId, setOpenId] = React.useState<string | null>(params.get("id"))
+  const [pageSize, setPageSize] = React.useState(25)
+  const [openId, setOpenId] = useQueryParam("id")
   const [noteDraft, setNoteDraft] = React.useState("")
 
-  React.useEffect(() => {
-    const id = params.get("id")
-    if (id) setOpenId(id)
-  }, [params])
 
   const stats = React.useMemo(() => {
     const m = new Map<string, { orders: number; spend: number; last: number }>()
@@ -55,7 +51,7 @@ export function CustomersView() {
         (!q || c.name.includes(q) || c.phone.replace(/-/g, "").includes(q.replace(/-/g, "")) || c.identities.some((i) => i.handle.toLowerCase().includes(q.toLowerCase()))),
     )
     .sort((a, b) => (stats.get(b.id)?.spend ?? 0) - (stats.get(a.id)?.spend ?? 0))
-  const pageList = list.slice(page * PAGE, page * PAGE + PAGE)
+  const pageList = list.slice(page * pageSize, page * pageSize + pageSize)
   React.useEffect(() => setPage(0), [q, platform, tier])
 
   const multi = customers.filter((c) => c.identities.length > 1).length
@@ -157,28 +153,17 @@ export function CustomersView() {
             </TableBody>
           </Table>
         </div>
-        <div className="flex items-center justify-between border-t px-4 py-3 text-sm text-muted-foreground">
-          <span>
-            แสดง {list.length ? page * PAGE + 1 : 0}–{Math.min((page + 1) * PAGE, list.length)} จาก {num(list.length)} คน
-          </span>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-              ก่อนหน้า
-            </Button>
-            <Button size="sm" variant="outline" disabled={(page + 1) * PAGE >= list.length} onClick={() => setPage((p) => p + 1)}>
-              ถัดไป
-            </Button>
-          </div>
-        </div>
+        <Pager page={page} pageSize={pageSize} total={list.length} onPage={setPage} onPageSize={setPageSize} unit="คน" />
       </Card>
 
       <Sheet open={!!open} onOpenChange={(o) => !o && setOpenId(null)}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
+        <SheetContent className="overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:max-w-xl">
           {open && (
             <>
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-2">
                   {open.name} <TierBadge tier={open.tier} />
+                  <CopyLinkButton className="ml-auto mr-6" />
                 </SheetTitle>
                 <SheetDescription>
                   รหัสลูกค้า {open.id} · เป็นลูกค้าตั้งแต่ {dateOnly(open.joinedAt)}

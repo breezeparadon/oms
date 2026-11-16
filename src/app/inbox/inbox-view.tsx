@@ -2,14 +2,14 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { ArrowLeft, Check, Megaphone, PackageSearch, Radio, ShoppingCart, Ticket, Image as ImageIcon, MessageSquareReply, Paperclip, Search, Send, ShoppingBag, Sparkles, Tag, UserRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { FilterSelect, PlatformDot, Pill, ProductThumb, StatusBadge, TierBadge, initials } from "@/components/oms/bits"
+import { CopyLinkButton, PlatformDot, Pill, ProductThumb, StatusBadge, TierBadge, initials } from "@/components/oms/bits"
+import { useQueryParam } from "@/components/oms/use-query-param"
 import { useOms } from "@/components/oms/store"
 import { AGENTS, CHAT_LABELS, CHAT_SOURCE, PLATFORMS, PLATFORM_IDS, QUICK_REPLIES, messagePreview, productBySku, orderTotal, shopById, type Conversation } from "@/lib/mock-data"
 import { ago, baht, dateOnly, timeOnly } from "@/lib/format"
@@ -18,19 +18,14 @@ import { cn } from "@/lib/utils"
 type Filter = "all" | "unread" | "pending" | "unassigned" | "closed"
 
 export function InboxView() {
-  const params = useSearchParams()
   const { conversations, customers, orders, products, sendMessage, updateConversation } = useOms()
-  const [activeId, setActiveId] = React.useState<string | null>(params.get("c"))
+  const [activeId, setActiveId] = useQueryParam("c")
   const [platform, setPlatform] = React.useState("all")
   const [filter, setFilter] = React.useState<Filter>("all")
   const [q, setQ] = React.useState("")
   const [text, setText] = React.useState("")
   const threadRef = React.useRef<HTMLDivElement>(null)
 
-  React.useEffect(() => {
-    const c = params.get("c")
-    if (c) setActiveId(c)
-  }, [params])
 
   const custMap = React.useMemo(() => new Map(customers.map((c) => [c.id, c])), [customers])
   const sorted = [...conversations].sort((a, b) => b.messages[b.messages.length - 1].at - a.messages[a.messages.length - 1].at)
@@ -95,7 +90,7 @@ export function InboxView() {
             <Search className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ค้นหาชื่อ / ข้อความ" className="pl-8" />
           </div>
-          <div className="flex gap-1 overflow-x-auto">
+          <div className="no-scrollbar flex gap-1 overflow-x-auto">
             <button onClick={() => setPlatform("all")} className={cn("shrink-0 rounded-md border px-2 py-1 text-xs", platform === "all" && "border-primary bg-primary text-primary-foreground")}>
               ทั้งหมด
             </button>
@@ -105,7 +100,7 @@ export function InboxView() {
               </button>
             ))}
           </div>
-          <div className="flex gap-1 overflow-x-auto text-xs">
+          <div className="no-scrollbar flex gap-1 overflow-x-auto text-xs">
             {(
               [
                 ["all", "เปิดอยู่"],
@@ -172,6 +167,7 @@ export function InboxView() {
                   {active.platform && customer.identities.find((i) => i.platform === active.platform)?.handle} · {shopById(active.shopId).name}
                 </div>
               </div>
+              <CopyLinkButton className="hidden h-7 lg:inline-flex" />
               <DropdownMenu>
                 <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
                   <UserRound /> {active.assignee ?? "มอบหมาย"}
@@ -259,7 +255,7 @@ export function InboxView() {
             </div>
 
             <div className="border-t bg-background p-3">
-              <div className="mb-2 flex gap-1 overflow-x-auto">
+              <div className="no-scrollbar mb-2 flex gap-1 overflow-x-auto">
                 {QUICK_REPLIES.map((r) => (
                   <button key={r} onClick={() => setText(r)} className="shrink-0 rounded-full border px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted" title={r}>
                     <MessageSquareReply className="mr-1 inline size-3" />

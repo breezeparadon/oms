@@ -89,7 +89,15 @@ export function AppSidebar() {
                       <it.icon />
                       <span>{it.label}</span>
                     </SidebarMenuButton>
-                    {!!it.badge && <SidebarMenuBadge>{it.badge}</SidebarMenuBadge>}
+                    {!!it.badge && (
+                      <>
+                        <SidebarMenuBadge className="h-5 min-w-5 rounded-full bg-rose-500 px-1.5 text-[11px] font-bold text-white shadow-sm ring-2 ring-sidebar peer-hover/menu-button:text-white peer-data-active/menu-button:text-white">
+                          {it.badge > 99 ? "99+" : it.badge}
+                        </SidebarMenuBadge>
+                        {/* collapsed (icon) mode: show a red dot on the icon */}
+                        <span className="pointer-events-none absolute top-1 left-5 hidden size-2.5 rounded-full bg-rose-500 ring-2 ring-sidebar group-data-[collapsible=icon]:block" />
+                      </>
+                    )}
                   </SidebarMenuItem>
                 ))}
               </SidebarMenu>

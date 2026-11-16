@@ -153,3 +153,12 @@
 @media (prefers-reduced-motion: reduce) {
   .animate-cart-flash { animation: none; }
 }
+
+/* Horizontal chip rows: keep scrollable (touch / trackpad / shift+wheel) but hide the bar */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

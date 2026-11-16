@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { Camera, Check, MessageCircle, PackageOpen, Quote, RotateCcw, ShoppingCart, Wallet, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -11,7 +10,8 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Kpi, PageHeader, PlatformBadge, PlatformDot, Pill, ProductThumb, TierBadge } from "@/components/oms/bits"
+import { CopyLinkButton, Kpi, PageHeader, PlatformBadge, PlatformDot, Pill, ProductThumb, TierBadge } from "@/components/oms/bits"
+import { useQueryParam } from "@/components/oms/use-query-param"
 import { useOms } from "@/components/oms/store"
 import { PAYMENT_LABEL, RETURN_FLOW, RETURN_STATUS, RETURN_TYPE, productBySku, shopById, type ReturnCase } from "@/lib/mock-data"
 import { baht, dateOnly, dateTime, num } from "@/lib/format"
@@ -33,15 +33,9 @@ export default function ReturnsPage() {
 }
 
 function ReturnsView() {
-  const params = useSearchParams()
   const { returns, orders, customers, conversations, updateReturn, adjustStock } = useOms()
   const [filter, setFilter] = React.useState<ReturnCase["status"] | "all">("all")
-  const [openId, setOpenId] = React.useState<string | null>(params.get("id"))
-  const [lastId, setLastId] = React.useState(params.get("id"))
-  if (params.get("id") !== lastId) {
-    setLastId(params.get("id"))
-    setOpenId(params.get("id"))
-  }
+  const [openId, setOpenId] = useQueryParam("id")
   const list = returns.filter((r) => filter === "all" || r.status === filter)
   const refunded = returns.filter((r) => r.status === "refunded").reduce((s, r) => s + r.amount, 0)
 
@@ -143,12 +137,13 @@ function ReturnsView() {
       </Card>
 
       <Sheet open={!!open} onOpenChange={(v) => !v && setOpenId(null)}>
-        <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
+        <SheetContent className="overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:max-w-xl">
           {open && order && cust && (
             <>
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-2">
                   {open.id} <Pill className={RETURN_STATUS[open.status].className}>{RETURN_STATUS[open.status].label}</Pill>
+                  <CopyLinkButton className="ml-auto mr-6" />
                 </SheetTitle>
                 <SheetDescription>
                   {RETURN_TYPE[open.type]} · ยื่นคำขอ {dateTime(open.createdAt)}

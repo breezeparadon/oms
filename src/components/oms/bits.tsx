@@ -44,12 +44,12 @@ export function TierBadge({ tier }: { tier: Tier }) {
 
 export function PageHeader({ title, description, actions }: { title: string; description?: string; actions?: React.ReactNode }) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
+    <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between xl:gap-6">
+      <div className="min-w-0 flex-1">
         <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
-        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+        {description && <p className="mt-1 max-w-3xl text-sm text-pretty text-muted-foreground">{description}</p>}
       </div>
-      {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
+      {actions && <div className="flex shrink-0 flex-wrap items-center gap-2 xl:flex-nowrap xl:justify-end">{actions}</div>}
     </div>
   )
 }
@@ -105,7 +105,7 @@ export function FilterSelect({
   )
 }
 
-import { Gift } from "lucide-react"
+import { Gift, Package } from "lucide-react"
 import { productBySku } from "@/lib/mock-data"
 
 export function ProductThumb({ sku, className }: { sku: string; className?: string }) {
@@ -116,8 +116,32 @@ export function ProductThumb({ sku, className }: { sku: string; className?: stri
         // eslint-disable-next-line @next/next/no-img-element
         <img src={p.image} alt={p.name} loading="lazy" className="size-full object-cover" />
       ) : (
-        <Gift className="size-1/2 text-primary" />
+        sku.startsWith("FREE") ? <Gift className="size-1/2 text-primary" /> : <Package className="size-1/2 text-muted-foreground" />
       )}
     </span>
+  )
+}
+
+import { Link2 } from "lucide-react"
+import { toast } from "sonner"
+
+/** Copies the current URL (which encodes the open item) so it can be sent to teammates */
+export function CopyLinkButton({ className }: { className?: string }) {
+  return (
+    <button
+      type="button"
+      title="คัดลอกลิงก์ส่งให้ทีม"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(window.location.href)
+          toast.success("คัดลอกลิงก์แล้ว", { description: window.location.pathname + window.location.search })
+        } catch {
+          toast.error("คัดลอกไม่สำเร็จ", { description: window.location.href })
+        }
+      }}
+      className={cn("inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-normal text-muted-foreground hover:bg-muted hover:text-foreground", className)}
+    >
+      <Link2 className="size-3.5" /> คัดลอกลิงก์
+    </button>
   )
 }

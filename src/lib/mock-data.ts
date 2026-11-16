@@ -65,8 +65,10 @@ export type Product = {
   image?: string
   stock: { bkk: number; cnx: number }
   safety: number
-  listings: Partial<Record<PlatformId, { listingId: string; synced: boolean }>>
+  listings: Partial<Record<PlatformId, Listing>>
+  weight?: number // grams
 }
+export type Listing = { listingId: string; synced: boolean; state?: "live" | "pending" | "failed"; note?: string }
 
 // [sku, name, brand, group, category, price, fullPrice]
 const PRODUCT_SEED: [string, string, string, string, string, number, number][] = [
@@ -715,3 +717,48 @@ export const INITIAL_RETURNS: ReturnCase[] = INITIAL_ORDERS.filter((o) => o.stat
   })
 
 export const messagePreview = (m: ChatMessage) => m.text || (m.product ? `📦 การ์ดสินค้า: ${productBySku(m.product).name}` : m.coupon ? `🎟 ${m.coupon}` : "")
+
+
+// ---------- Platform listings not yet linked to a master SKU (for "ดึงสินค้าจากแพลตฟอร์ม") ----------
+export type PlatformListing = {
+  id: string
+  platform: PlatformId
+  title: string
+  sellerSku: string
+  price: number
+  stock: number
+  image?: string
+  suggestSku?: string // best match in master catalogue
+  score?: number
+}
+const DECOR = ["[ของแท้ 100%] ", "🔥ส่งฟรี🔥 ", "【พร้อมส่ง】", "", "NEW! "]
+export const INITIAL_PLATFORM_LISTINGS: PlatformListing[] = (() => {
+  const out: PlatformListing[] = []
+  const pool = shuffle(PRODUCTS.filter((p) => p.price > 0))
+  let n = 0
+  for (const p of pool) {
+    const missing = (["shopee", "lazada", "tiktok"] as PlatformId[]).filter((pl) => !p.listings[pl])
+    if (!missing.length) continue
+    const platform = pick(missing)
+    const variant = pick([p.sku, p.sku.toLowerCase(), `${p.sku}-${PLATFORMS[platform].short}`, ""])
+    out.push({
+      id: `PL-${platform}-${int(100000, 999999)}`,
+      platform,
+      title: `${pick(DECOR)}${p.name}${rand() < 0.4 ? " ราคาพิเศษ" : ""}`,
+      sellerSku: variant,
+      price: p.price + pick([0, 0, 10, -10, 20]),
+      stock: int(0, 80),
+      image: p.image,
+      suggestSku: p.sku,
+      score: variant.toUpperCase().startsWith(p.sku.toUpperCase()) ? 100 : int(78, 94),
+    })
+    if (++n >= 9) break
+  }
+  // listings that only exist on the platform (no master SKU yet)
+  out.push(
+    { id: "PL-shopee-778201", platform: "shopee", title: "Happy Shopping ถุงผ้าแคนวาส ลายความสุข สั่งได้", sellerSku: "HS-TOTE-01", price: 159, stock: 120 },
+    { id: "PL-tiktok-551920", platform: "tiktok", title: "เซ็ตของขวัญปีใหม่ 2027 Happy Box (คละสินค้า)", sellerSku: "", price: 1590, stock: 30 },
+    { id: "PL-lazada-302118", platform: "lazada", title: "Happy Shopping ร่มพับ UV กันแดด", sellerSku: "HS-UMB-UV", price: 290, stock: 45 },
+  )
+  return out
+})()

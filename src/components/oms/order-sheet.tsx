@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { PAYMENT_LABEL, RAW_STATUS, orderSubtotal, orderTotal, productBySku, shopById, type Order } from "@/lib/mock-data"
 import { baht, dateTime, dueIn } from "@/lib/format"
-import { PlatformBadge, Pill, ProductThumb, StatusBadge, TierBadge } from "./bits"
+import { CopyLinkButton, PlatformBadge, Pill, ProductThumb, StatusBadge, TierBadge } from "./bits"
 import { useOms } from "./store"
 
 export function OrderSheet({ order, onOpenChange }: { order: Order | null; onOpenChange: (open: boolean) => void }) {
@@ -18,12 +18,13 @@ export function OrderSheet({ order, onOpenChange }: { order: Order | null; onOpe
   const conv = o ? conversations.find((x) => x.customerId === o.customerId) : undefined
   return (
     <Sheet open={!!o} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
+      <SheetContent className="overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:max-w-lg">
         {o && c && (
           <>
             <SheetHeader>
               <SheetTitle className="flex items-center gap-2">
                 {o.id} <StatusBadge status={o.status} />
+                <CopyLinkButton className="ml-auto mr-6" />
               </SheetTitle>
               <SheetDescription>
                 เลขออเดอร์แพลตฟอร์ม <span className="font-mono">{o.platformOrderNo}</span>

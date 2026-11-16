@@ -13,30 +13,31 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, DropdownMenuGroup } from "@/components/ui/dropdown-menu"
 import { FilterSelect, PageHeader, PlatformDot, Pill, ProductThumb, StatusBadge } from "@/components/oms/bits"
 import { OrderSheet } from "@/components/oms/order-sheet"
+import { useQueryParam } from "@/components/oms/use-query-param"
 import { canMerge, useOms } from "@/components/oms/store"
+import { Pager } from "@/components/oms/pager"
 import { PAYMENT_LABEL, PLATFORMS, PLATFORM_IDS, SHOPS, STATUSES, STATUS_IDS, orderTotal, productBySku, shopById, type OrderStatus } from "@/lib/mock-data"
 import { baht, dateTime, dueIn, num } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-const PAGE = 25
 
 export function OrdersView() {
   const params = useSearchParams()
   const { orders, customers, printLabels, setStatus, mergeOrders } = useOms()
-  const [tab, setTab] = React.useState<OrderStatus | "all">((params.get("status") as OrderStatus | "all") || "to_process")
+  const [statusParam, setStatusParam] = useQueryParam("status")
+  const tab = (statusParam as OrderStatus | "all" | null) ?? "to_process"
+  const setTab = (s: OrderStatus | "all") => setStatusParam(s)
   const [platform, setPlatform] = React.useState("all")
   const [shop, setShop] = React.useState("all")
   const [payment, setPayment] = React.useState("all")
   const [q, setQ] = React.useState(params.get("q") ?? "")
   const [page, setPage] = React.useState(0)
+  const [pageSize, setPageSize] = React.useState(25)
   const [selected, setSelected] = React.useState<Set<string>>(new Set())
-  const [openId, setOpenId] = React.useState<string | null>(params.get("open"))
+  const [openId, setOpenId] = useQueryParam("open")
 
   React.useEffect(() => {
-    const s = params.get("status") as OrderStatus | "all" | null
-    if (s) setTab(s)
     if (params.get("q") !== null) setQ(params.get("q") ?? "")
-    if (params.get("open")) setOpenId(params.get("open"))
   }, [params])
 
   const custMap = React.useMemo(() => new Map(customers.map((c) => [c.id, c])), [customers])
@@ -54,7 +55,7 @@ export function OrdersView() {
         (o.tracking ?? "").includes(q.toUpperCase())),
   )
   const list = tab === "all" ? base : base.filter((o) => o.status === tab)
-  const pageList = list.slice(page * PAGE, page * PAGE + PAGE)
+  const pageList = list.slice(page * pageSize, page * pageSize + pageSize)
   const selOrders = orders.filter((o) => selected.has(o.id))
   const merge = canMerge(selOrders)
 
@@ -91,7 +92,7 @@ export function OrdersView() {
       />
 
       {/* Status tabs */}
-      <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
+      <div className="no-scrollbar -mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
         {(["all", ...STATUS_IDS] as const).map((s) => {
           const n = s === "all" ? base.length : base.filter((o) => o.status === s).length
           return (
@@ -309,19 +310,7 @@ export function OrdersView() {
             </TableBody>
           </Table>
         </div>
-        <div className="flex items-center justify-between border-t px-4 py-3 text-sm text-muted-foreground">
-          <span>
-            แสดง {list.length ? page * PAGE + 1 : 0}–{Math.min((page + 1) * PAGE, list.length)} จาก {num(list.length)}
-          </span>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-              ก่อนหน้า
-            </Button>
-            <Button size="sm" variant="outline" disabled={(page + 1) * PAGE >= list.length} onClick={() => setPage((p) => p + 1)}>
-              ถัดไป
-            </Button>
-          </div>
-        </div>
+        <Pager page={page} pageSize={pageSize} total={list.length} onPage={setPage} onPageSize={setPageSize} unit="รายการ" />
       </Card>
 
       <OrderSheet order={orders.find((o) => o.id === openId) ?? null} onOpenChange={(open) => !open && setOpenId(null)} />

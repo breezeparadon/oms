@@ -13,6 +13,9 @@ import {
   INITIAL_CONVERSATIONS,
   INITIAL_ORDERS,
   INITIAL_RETURNS,
+  INITIAL_PLATFORM_LISTINGS,
+  type Listing,
+  type PlatformListing,
   NOW,
   PRODUCTS,
   type ChatMessage,
@@ -66,6 +69,11 @@ function seedMovements(): Movement[] {
 }
 
 /** channels (other than the source) that get the new quantity pushed */
+/** make new SKUs resolvable by productBySku() used across the UI */
+function registerProduct(p: Product) {
+  if (!PRODUCTS.some((x) => x.sku === p.sku)) PRODUCTS.push(p)
+}
+
 function listingChannels(sku: string, except?: PlatformId): PlatformId[] {
   const p = PRODUCTS.find((x) => x.sku === sku)
   return (Object.keys(p?.listings ?? {}) as PlatformId[]).filter((pl) => pl !== except)
@@ -98,6 +106,11 @@ type Ctx = {
   movements: Movement[]
   available: (sku: string) => number
   simulateSale: (sku: string, platform: PlatformId) => string
+  addProduct: (p: Product) => void
+  setListing: (sku: string, platform: PlatformId, listing: Listing | null) => void
+  platformListings: PlatformListing[]
+  linkListing: (listingId: string, sku: string) => void
+  createFromListing: (listingId: string) => string
   syncListing: (sku: string) => void
   reserved: (sku: string) => number
   sendMessage: (convId: string, text: string, from?: ChatMessage["from"], extra?: Pick<ChatMessage, "product" | "coupon">) => void
@@ -110,7 +123,7 @@ const OmsContext = React.createContext<Ctx | null>(null)
 
 export function OmsProvider({ children }: { children: React.ReactNode }) {
   const [orders, setOrders] = React.useState<Order[]>(INITIAL_ORDERS)
-  const [products, setProducts] = React.useState<Product[]>(PRODUCTS)
+  const [products, setProducts] = React.useState<Product[]>(() => [...PRODUCTS])
   const [customers, setCustomers] = React.useState<Customer[]>(CUSTOMERS)
   const [conversations, setConversations] = React.useState<Conversation[]>(INITIAL_CONVERSATIONS)
   const [returns, setReturns] = React.useState<ReturnCase[]>(INITIAL_RETURNS)
@@ -118,6 +131,7 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
   const clock = React.useRef(0) // monotonic offset so new items sort after seed data
 
   const [movements, setMovements] = React.useState<Movement[]>(seedMovements)
+  const [platformListings, setPlatformListings] = React.useState<PlatformListing[]>(INITIAL_PLATFORM_LISTINGS)
   const tick = () => NOW + ++clock.current * 1000
 
   const reservedMap = React.useMemo(() => {
@@ -195,6 +209,53 @@ export function OmsProvider({ children }: { children: React.ReactNode }) {
   }
 
   const value: Ctx = {
+    platformListings,
+    addProduct: (p) => {
+      registerProduct(p)
+      setProducts((prev) => [p, ...prev])
+      const qty = p.stock.bkk + p.stock.cnx
+      if (qty) setMovements((prev) => [{ id: `mv-new-${p.sku}`, at: tick(), sku: p.sku, kind: "adjust", availDelta: qty, onHandDelta: qty, availAfter: qty, ref: "สร้างสินค้าใหม่" }, ...prev])
+    },
+    setListing: (sku, platform, listing) =>
+      setProducts((prev) =>
+        prev.map((x) => {
+          if (x.sku !== sku) return x
+          const listings = { ...x.listings }
+          if (listing) listings[platform] = listing
+          else delete listings[platform]
+          return { ...x, listings }
+        }),
+      ),
+    linkListing: (listingId, sku) => {
+      const l = platformListings.find((x) => x.id === listingId)
+      if (!l) return
+      setProducts((prev) => prev.map((x) => (x.sku === sku ? { ...x, listings: { ...x.listings, [l.platform]: { listingId: l.id, synced: true, state: "live" } } } : x)))
+      setPlatformListings((prev) => prev.filter((x) => x.id !== listingId))
+      toast.success(`ผูก ${PLATFORMS[l.platform].name} เข้ากับ SKU ${sku} แล้ว`, { description: `ต่อจากนี้สต๊อกบน ${PLATFORMS[l.platform].name} จะถูกคุมจาก OMS (ตั้งเป็น ${availNow(sku)})` })
+    },
+    createFromListing: (listingId) => {
+      const l = platformListings.find((x) => x.id === listingId)!
+      const sku = (l.sellerSku || `HS-${l.id.slice(-6)}`).toUpperCase()
+      const p: Product = {
+        sku,
+        name: l.title.replace(/^(\[[^\]]*\]|【[^】]*】|🔥[^🔥]*🔥|NEW!)\s*/u, ""),
+        brand: "Happy Shopping",
+        group: "สินค้าใหม่ (ยังไม่จัดหมวด)",
+        category: "ทั่วไป",
+        price: l.price,
+        fullPrice: l.price,
+        cost: Math.round(l.price * 0.4),
+        image: l.image,
+        stock: { bkk: l.stock, cnx: 0 },
+        safety: 10,
+        listings: { [l.platform]: { listingId: l.id, synced: true, state: "live" } },
+      }
+      registerProduct(p)
+      setProducts((prev) => [p, ...prev])
+      setPlatformListings((prev) => prev.filter((x) => x.id !== listingId))
+      toast.success(`สร้าง SKU กลาง ${sku} จาก ${PLATFORMS[l.platform].name} แล้ว`, { description: "ตั้งสต๊อกเริ่มต้นตามจำนวนบนแพลตฟอร์ม — ควรนับสต๊อกจริงอีกครั้ง" })
+      return sku
+    },
     movements,
     available: (sku) => availNow(sku),
     orders,

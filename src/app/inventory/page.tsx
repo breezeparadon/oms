@@ -3,7 +3,7 @@
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
-import { AlertTriangle, Boxes, CheckCircle2, PackageX, RefreshCw, Search, TriangleAlert } from "lucide-react"
+import { DownloadCloud, Plus, AlertTriangle, Boxes, CheckCircle2, PackageX, RefreshCw, Search, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -11,8 +11,11 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { FilterSelect, Kpi, PageHeader, PlatformDot, ProductThumb } from "@/components/oms/bits"
+import { CopyLinkButton, FilterSelect, Kpi, PageHeader, PlatformDot, ProductThumb } from "@/components/oms/bits"
+import { useQueryParam } from "@/components/oms/use-query-param"
 import { MOVEMENT_LABEL, useOms } from "@/components/oms/store"
+import { AddProductSheet, ImportListingsSheet } from "@/components/oms/product-tools"
+import { Pager } from "@/components/oms/pager"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { NumberInput } from "@/components/oms/number-input"
 import { PLATFORM_IDS, PLATFORMS, type PlatformId, type Product } from "@/lib/mock-data"
@@ -29,8 +32,10 @@ export default function InventoryPage() {
 
 function InventoryView() {
   const params = useSearchParams()
-  const { products, reserved, adjustStock, syncListing } = useOms()
-  const [detailSku, setDetailSku] = React.useState<string | null>(null)
+  const { products, reserved, adjustStock, syncListing, platformListings } = useOms()
+  const [addOpen, setAddOpen] = React.useState(false)
+  const [importOpen, setImportOpen] = React.useState(false)
+  const [detailSku, setDetailSku] = useQueryParam("sku")
   const [q, setQ] = React.useState(params.get("q") ?? "")
   const [lastQ, setLastQ] = React.useState(params.get("q"))
   if (params.get("q") !== lastQ) {
@@ -39,6 +44,8 @@ function InventoryView() {
   }
   const [cat, setCat] = React.useState("all")
   const [sub, setSub] = React.useState("all")
+  const [page, setPage] = React.useState(0)
+  const [pageSize, setPageSize] = React.useState(10)
   const [lowOnly, setLowOnly] = React.useState(false)
   const [editing, setEditing] = React.useState<Product | null>(null)
   const [delta, setDelta] = React.useState(0)
@@ -49,6 +56,15 @@ function InventoryView() {
   const list = products.filter(
     (p) => (cat === "all" || p.group === cat) && (sub === "all" || p.category === sub) && (!q || p.name.toLowerCase().includes(q.toLowerCase()) || p.sku.toLowerCase().includes(q.toLowerCase()) || p.brand.toLowerCase().includes(q.toLowerCase())) && (!lowOnly || avail(p) <= p.safety),
   )
+  const pageCount = Math.max(1, Math.ceil(list.length / pageSize))
+  const filterKey = `${q}|${cat}|${sub}|${lowOnly}`
+  const [lastKey, setLastKey] = React.useState(filterKey)
+  if (filterKey !== lastKey) {
+    setLastKey(filterKey)
+    setPage(0)
+  } else if (page > pageCount - 1) setPage(0)
+  const pageList = list.slice(page * pageSize, page * pageSize + pageSize)
+
   const sellable = products.filter((p) => p.price > 0)
   const low = sellable.filter((p) => avail(p) <= p.safety && avail(p) > 0)
   const out = sellable.filter((p) => avail(p) <= 0)
@@ -59,9 +75,14 @@ function InventoryView() {
     <div className="space-y-4">
       <PageHeader
         title="สต๊อกและ SKU กลาง"
-        description="1 SKU กลาง ผูกกับสินค้าทุกแพลตฟอร์ม — มีออเดอร์เข้าจากช่องทางไหน ระบบตัดสต๊อกกลางและอัปเดตจำนวนไปทุกช่องทางทันที กันขายเกิน (Overselling)"
+        description="1 SKU กลางผูกกับทุกแพลตฟอร์ม — ขายได้ที่ไหน ระบบตัดสต๊อกกลางและอัปเดตทุกช่องทางทันที กันขายเกิน"
         actions={
-          <Button
+          <>
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <DownloadCloud /> ดึงสินค้าจากแพลตฟอร์ม
+            {platformListings.length > 0 && <span className="rounded-full bg-rose-500 px-1.5 text-[10px] font-semibold text-white">{platformListings.length}</span>}
+          </Button>
+          <Button variant="outline"
             onClick={() => {
               unsynced.forEach((p) => syncListing(p.sku))
               toast.success("ซิงค์สต๊อกไปทุกช่องทางแล้ว", { description: `${products.length} SKU × ${PLATFORM_IDS.length} ช่องทาง` })
@@ -69,6 +90,10 @@ function InventoryView() {
           >
             <RefreshCw /> ซิงค์สต๊อกทุกช่องทาง
           </Button>
+          <Button onClick={() => setAddOpen(true)}>
+            <Plus /> เพิ่มสินค้า
+          </Button>
+          </>
         }
       />
 
@@ -123,7 +148,7 @@ function InventoryView() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {list.map((p) => {
+              {pageList.map((p) => {
                 const a = avail(p)
                 const r = reserved(p.sku)
                 return (
@@ -155,9 +180,9 @@ function InventoryView() {
                         {PLATFORM_IDS.map((pl) => {
                           const l = p.listings[pl]
                           return (
-                            <span key={pl} title={l ? `${PLATFORMS[pl].name}: ${l.listingId} ${l.synced ? "(ซิงค์แล้ว)" : "(ซิงค์ไม่สำเร็จ)"}` : `${PLATFORMS[pl].name}: ยังไม่ผูก`} className="relative">
+                            <span key={pl} title={l ? `${PLATFORMS[pl].name}: ${l.listingId} ${l.state === "pending" ? "(รอแพลตฟอร์มตรวจสอบ)" : l.state === "failed" ? `(ลงขายไม่สำเร็จ: ${l.note ?? ""})` : l.synced ? "(ซิงค์แล้ว)" : "(ซิงค์ไม่สำเร็จ)"}` : `${PLATFORMS[pl].name}: ยังไม่ผูก`} className="relative">
                               <PlatformDot platform={pl} className={cn(!l && "opacity-20 grayscale")} />
-                              {l && !l.synced && <span className="absolute -top-1 -right-1 size-2 rounded-full bg-rose-500 ring-2 ring-background" />}
+                              {l && (l.state === "pending" ? <span className="absolute -top-1 -right-1 size-2 rounded-full bg-amber-500 ring-2 ring-background" /> : (l.state === "failed" || !l.synced) && <span className="absolute -top-1 -right-1 size-2 rounded-full bg-rose-500 ring-2 ring-background" />)}
                             </span>
                           )
                         })}
@@ -182,6 +207,7 @@ function InventoryView() {
             </TableBody>
           </Table>
         </div>
+        <Pager page={page} pageSize={pageSize} total={list.length} onPage={setPage} onPageSize={setPageSize} unit="SKU" />
       </Card>
       <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
         <span>คลิกที่แถวเพื่อดูจำนวนบนแต่ละช่องทางและประวัติสต๊อก</span>
@@ -232,6 +258,8 @@ function InventoryView() {
       </Dialog>
 
       <SkuSheet sku={detailSku} onClose={() => setDetailSku(null)} />
+      <AddProductSheet open={addOpen} onOpenChange={setAddOpen} />
+      <ImportListingsSheet open={importOpen} onOpenChange={setImportOpen} />
     </div>
   )
 }
@@ -259,16 +287,19 @@ function SkuSheet({ sku, onClose }: { sku: string | null; onClose: () => void })
 
   return (
     <Sheet open={!!p} onOpenChange={(o) => !o && onClose()}>
-      <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
+      <SheetContent className="overflow-y-auto data-[side=right]:w-full data-[side=right]:sm:max-w-xl">
         {p && (
           <>
-            <SheetHeader>
+            <SheetHeader className="pr-12">
               <div className="flex items-center gap-3">
                 <ProductThumb sku={p.sku} className="size-14" />
                 <div className="min-w-0">
                   <SheetTitle className="line-clamp-2 text-base">{p.name}</SheetTitle>
-                  <SheetDescription>
-                    <span className="font-mono">{p.sku}</span> · {p.brand}
+                  <SheetDescription className="flex flex-wrap items-center gap-2">
+                    <span>
+                      <span className="font-mono">{p.sku}</span> · {p.brand}
+                    </span>
+                    <CopyLinkButton />
                   </SheetDescription>
                 </div>
               </div>
