@@ -1,0 +1,107 @@
+"use client"
+
+import Link from "next/link"
+import { usePathname } from "next/navigation"
+import {
+  BarChart3, Boxes, ClipboardList, Combine, LayoutDashboard, MessagesSquare, PackageCheck, PlugZap, Plus, RotateCcw, ScanBarcode, ShoppingCart, Users,
+} from "lucide-react"
+import {
+  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarRail,
+} from "@/components/ui/sidebar"
+import { useOms } from "./store"
+
+type Item = { href: string; label: string; icon: React.ComponentType; badge?: number }
+
+export function AppSidebar() {
+  const pathname = usePathname()
+  const { orders, conversations, returns } = useOms()
+  const toProcess = orders.filter((o) => o.status === "to_process").length
+  const unread = conversations.filter((c) => c.unread > 0 && c.status !== "closed").length
+  const returnOpen = returns.filter((r) => r.status === "requested").length
+
+  const groups: { label: string; items: Item[] }[] = [
+    { label: "ภาพรวม", items: [{ href: "/", label: "แดชบอร์ด", icon: LayoutDashboard }] },
+    {
+      label: "ออเดอร์ (OMS)",
+      items: [
+        { href: "/orders", label: "ออเดอร์ทั้งหมด", icon: ShoppingCart, badge: toProcess },
+        { href: "/orders/merge", label: "รวมออเดอร์", icon: Combine },
+        { href: "/orders/new", label: "สร้างออเดอร์ (แชท)", icon: Plus },
+      ],
+    },
+    {
+      label: "คลังและจัดส่ง",
+      items: [
+        { href: "/fulfillment/picking", label: "ใบหยิบสินค้า", icon: ClipboardList },
+        { href: "/fulfillment/packing", label: "สแกนแพ็กสินค้า", icon: ScanBarcode },
+        { href: "/inventory", label: "สต๊อกและ SKU", icon: Boxes },
+      ],
+    },
+    {
+      label: "ลูกค้า (CRM)",
+      items: [
+        { href: "/inbox", label: "แชทรวมทุกช่องทาง", icon: MessagesSquare, badge: unread },
+        { href: "/customers", label: "ข้อมูลลูกค้า", icon: Users },
+      ],
+    },
+    {
+      label: "หลังการขาย / รายงาน",
+      items: [
+        { href: "/returns", label: "คืนสินค้า/คืนเงิน", icon: RotateCcw, badge: returnOpen },
+        { href: "/reports", label: "รายงาน", icon: BarChart3 },
+        { href: "/channels", label: "เชื่อมต่อช่องทาง", icon: PlugZap },
+      ],
+    },
+  ]
+
+  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname === href || (href !== "/orders" && pathname.startsWith(href + "/")))
+
+  return (
+    <Sidebar collapsible="icon">
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" className="h-auto py-2" render={<Link href="/" />}>
+              <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-brand-gradient text-sm font-black text-white">h</div>
+              <div className="grid flex-1 text-left leading-none">
+                <span className="text-[22px] font-extrabold tracking-tight text-[#9200ff]" style={{ fontFamily: "var(--font-sans)" }}>
+                  happy
+                </span>
+                <span className="mt-0.5 flex items-center gap-1.5">
+                  <span className="bg-brand-gradient px-1 py-px text-[9px] font-bold tracking-wider text-white">SHOPPING</span>
+                  <span className="text-[10px] font-semibold text-[#ff2a00]">ความสุข สั่งได้</span>
+                </span>
+              </div>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+      <SidebarContent>
+        {groups.map((g) => (
+          <SidebarGroup key={g.label}>
+            <SidebarGroupLabel>{g.label}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {g.items.map((it) => (
+                  <SidebarMenuItem key={it.href}>
+                    <SidebarMenuButton isActive={isActive(it.href)} tooltip={it.label} render={<Link href={it.href} />}>
+                      <it.icon />
+                      <span>{it.label}</span>
+                    </SidebarMenuButton>
+                    {!!it.badge && <SidebarMenuBadge>{it.badge}</SidebarMenuBadge>}
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
+      </SidebarContent>
+      <SidebarFooter>
+        <div className="rounded-lg bg-brand-soft p-2.5 text-[11px] leading-snug text-muted-foreground group-data-[collapsible=icon]:hidden">
+          <span className="font-semibold text-foreground">OMS + CRM</span> · Mockup สำหรับนำเสนอ — ข้อมูลทั้งหมดเป็นข้อมูลจำลอง
+        </div>
+      </SidebarFooter>
+      <SidebarRail />
+    </Sidebar>
+  )
+}

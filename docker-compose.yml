@@ -1,0 +1,21 @@
+name: happy-oms
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: happy-oms-mockup:latest
+    container_name: happy_oms_mockup
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Bangkok
+    ports:
+      # Host port 3456 checked free (other projects use 3000/3001/3300/7777/8xxx/9999/543xx).
+      # Override with: OMS_PORT=4000 docker compose up -d
+      - "${OMS_PORT:-3456}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
