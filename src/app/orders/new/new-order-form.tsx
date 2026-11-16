@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { FilterSelect, PageHeader, PlatformDot, ProductThumb, TierBadge } from "@/components/oms/bits"
 import { useOms } from "@/components/oms/store"
+import { NumberInput } from "@/components/oms/number-input"
 import { CARRIERS, PLATFORMS, SHOPS, type Order, type PlatformId } from "@/lib/mock-data"
 import { baht } from "@/lib/format"
 import { cn } from "@/lib/utils"
@@ -41,7 +42,7 @@ export function NewOrderForm() {
   const custResults = custQ ? customers.filter((c) => c.name.includes(custQ) || c.phone.replace(/-/g, "").includes(custQ.replace(/-/g, ""))).slice(0, 6) : []
   const prodResults = products.filter((p) => p.price > 0 && (!prodQ || p.name.includes(prodQ) || p.sku.toLowerCase().includes(prodQ.toLowerCase()))).slice(0, 8)
   const subtotal = items.reduce((s, i) => s + i.qty * products.find((p) => p.sku === i.sku)!.price, 0)
-  const total = subtotal + shipping - discount
+  const total = Math.max(0, subtotal + shipping - discount)
 
   const [flash, setFlash] = React.useState<{ sku: string; n: number } | null>(null)
 
@@ -68,6 +69,7 @@ export function NewOrderForm() {
   const submit = () => {
     if (!customer) return toast.error("กรุณาเลือกลูกค้า")
     if (!items.length) return toast.error("กรุณาเพิ่มสินค้าอย่างน้อย 1 รายการ")
+    if (discount > subtotal) return toast.error("ส่วนลดมากกว่ายอดสินค้า กรุณาตรวจสอบ")
     if (payment === "transfer" && !slip) return toast.error("กรุณาแนบสลิปโอนเงิน หรือเลือกเก็บเงินปลายทาง")
     const shop = SHOPS.find((s) => s.platform === platform)!
     const id = addOrder({
@@ -240,11 +242,11 @@ export function NewOrderForm() {
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1.5">
                   <Label>ค่าส่ง</Label>
-                  <Input type="number" value={shipping} onChange={(e) => setShipping(Number(e.target.value) || 0)} />
+                  <NumberInput value={shipping} onValueChange={setShipping} />
                 </div>
                 <div className="space-y-1.5">
                   <Label>ส่วนลด</Label>
-                  <Input type="number" value={discount} onChange={(e) => setDiscount(Number(e.target.value) || 0)} />
+                  <NumberInput value={discount} onValueChange={setDiscount} />
                 </div>
               </div>
               <div className="space-y-1.5">

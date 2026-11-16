@@ -3,10 +3,10 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
-  BarChart3, Boxes, ClipboardList, Combine, LayoutDashboard, MessagesSquare, PackageCheck, PlugZap, Plus, RotateCcw, ScanBarcode, ShoppingCart, Users,
+  BarChart3, Boxes, ClipboardList, Combine, LayoutDashboard, MessagesSquare, PlugZap, Plus, RotateCcw, ScanBarcode, ShoppingCart, Users,
 } from "lucide-react"
 import {
-  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarRail,
+  Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarMenu, SidebarMenuBadge, SidebarMenuButton, SidebarMenuItem, SidebarRail, SidebarTrigger,
 } from "@/components/ui/sidebar"
 import { useOms } from "./store"
 
@@ -58,8 +58,8 @@ export function AppSidebar() {
 
   return (
     <Sidebar collapsible="icon">
-      <SidebarHeader>
-        <SidebarMenu>
+      <SidebarHeader className="flex-row items-center gap-1 group-data-[collapsible=icon]:flex-col">
+        <SidebarMenu className="min-w-0 flex-1">
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" className="h-auto py-2" render={<Link href="/" />}>
               <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-brand-gradient text-sm font-black text-white">h</div>
@@ -75,6 +75,7 @@ export function AppSidebar() {
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
+        <SidebarTrigger className="hidden shrink-0 text-muted-foreground md:inline-flex" title="ย่อ/ขยายเมนู" />
       </SidebarHeader>
       <SidebarContent>
         {groups.map((g) => (

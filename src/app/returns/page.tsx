@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { Camera, Check, MessageCircle, PackageOpen, Quote, RotateCcw, ShoppingCart, Wallet, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -24,9 +25,23 @@ const NEXT: Partial<Record<ReturnCase["status"], { to: ReturnCase["status"]; lab
 }
 
 export default function ReturnsPage() {
+  return (
+    <React.Suspense>
+      <ReturnsView />
+    </React.Suspense>
+  )
+}
+
+function ReturnsView() {
+  const params = useSearchParams()
   const { returns, orders, customers, conversations, updateReturn, adjustStock } = useOms()
   const [filter, setFilter] = React.useState<ReturnCase["status"] | "all">("all")
-  const [openId, setOpenId] = React.useState<string | null>(null)
+  const [openId, setOpenId] = React.useState<string | null>(params.get("id"))
+  const [lastId, setLastId] = React.useState(params.get("id"))
+  if (params.get("id") !== lastId) {
+    setLastId(params.get("id"))
+    setOpenId(params.get("id"))
+  }
   const list = returns.filter((r) => filter === "all" || r.status === filter)
   const refunded = returns.filter((r) => r.status === "refunded").reduce((s, r) => s + r.amount, 0)
 

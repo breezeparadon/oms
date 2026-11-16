@@ -23,18 +23,20 @@ const PAGE = 25
 export function OrdersView() {
   const params = useSearchParams()
   const { orders, customers, printLabels, setStatus, mergeOrders } = useOms()
-  const [tab, setTab] = React.useState<OrderStatus | "all">((params.get("status") as OrderStatus) || "to_process")
+  const [tab, setTab] = React.useState<OrderStatus | "all">((params.get("status") as OrderStatus | "all") || "to_process")
   const [platform, setPlatform] = React.useState("all")
   const [shop, setShop] = React.useState("all")
   const [payment, setPayment] = React.useState("all")
-  const [q, setQ] = React.useState("")
+  const [q, setQ] = React.useState(params.get("q") ?? "")
   const [page, setPage] = React.useState(0)
   const [selected, setSelected] = React.useState<Set<string>>(new Set())
-  const [openId, setOpenId] = React.useState<string | null>(null)
+  const [openId, setOpenId] = React.useState<string | null>(params.get("open"))
 
   React.useEffect(() => {
-    const s = params.get("status") as OrderStatus | null
+    const s = params.get("status") as OrderStatus | "all" | null
     if (s) setTab(s)
+    if (params.get("q") !== null) setQ(params.get("q") ?? "")
+    if (params.get("open")) setOpenId(params.get("open"))
   }, [params])
 
   const custMap = React.useMemo(() => new Map(customers.map((c) => [c.id, c])), [customers])

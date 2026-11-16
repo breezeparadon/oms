@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { AlertTriangle, Boxes, CheckCircle2, PackageX, RefreshCw, Search, TriangleAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -12,13 +13,28 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { FilterSelect, Kpi, PageHeader, PlatformDot, ProductThumb } from "@/components/oms/bits"
 import { useOms } from "@/components/oms/store"
+import { NumberInput } from "@/components/oms/number-input"
 import { PLATFORM_IDS, PLATFORMS, type Product } from "@/lib/mock-data"
 import { baht, num } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 export default function InventoryPage() {
+  return (
+    <React.Suspense>
+      <InventoryView />
+    </React.Suspense>
+  )
+}
+
+function InventoryView() {
+  const params = useSearchParams()
   const { products, reserved, adjustStock, syncListing } = useOms()
-  const [q, setQ] = React.useState("")
+  const [q, setQ] = React.useState(params.get("q") ?? "")
+  const [lastQ, setLastQ] = React.useState(params.get("q"))
+  if (params.get("q") !== lastQ) {
+    setLastQ(params.get("q"))
+    setQ(params.get("q") ?? "")
+  }
   const [cat, setCat] = React.useState("all")
   const [lowOnly, setLowOnly] = React.useState(false)
   const [editing, setEditing] = React.useState<Product | null>(null)
@@ -169,7 +185,7 @@ export default function InventoryPage() {
             </div>
             <div className="space-y-1.5">
               <Label>จำนวน (+ รับเข้า / − ตัดออก)</Label>
-              <Input type="number" value={delta} onChange={(e) => setDelta(Number(e.target.value) || 0)} />
+              <NumberInput allowNegative value={delta} onValueChange={setDelta} placeholder="เช่น 50 หรือ -3" />
             </div>
           </div>
           <div className="flex gap-2">
