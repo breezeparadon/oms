@@ -10,6 +10,7 @@ import { ago, baht } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { PlatformDot } from "./bits"
 import { useOms } from "./store"
+import { useCrmLinks, useCrmOnly } from "./crm-mode"
 
 type Noti = {
   id: string
@@ -24,6 +25,8 @@ type Noti = {
 
 export function Notifications() {
   const { orders, conversations, products, reserved, returns, customers, me } = useOms()
+  const crm = useCrmOnly()
+  const links = useCrmLinks()
   const [open, setOpen] = React.useState(false)
   const [tab, setTab] = React.useState<"all" | Noti["kind"]>("all")
   const [read, setRead] = React.useState<Set<string>>(new Set())
@@ -42,7 +45,7 @@ export function Notifications() {
     // Unread chats (latest 6)
     for (const c of conversations.filter((x) => x.unread > 0 && x.status !== "closed").slice(0, 6)) {
       const last = c.messages[c.messages.length - 1]
-      list.push({ id: `chat-${c.id}-${c.messages.length}`, kind: "chat", icon: <PlatformDot platform={c.platform} className="size-full rounded-full text-[9px]" />, tone: "", title: `${customerById(c.customerId).name} ส่งข้อความ (${c.unread})`, body: messagePreview(last), at: last.at, href: `/inbox?c=${c.id}` })
+      list.push({ id: `chat-${c.id}-${c.messages.length}`, kind: "chat", icon: <PlatformDot platform={c.platform} className="size-full rounded-full text-[9px]" />, tone: "", title: `${customerById(c.customerId).name} ส่งข้อความ (${c.unread})`, body: messagePreview(last), at: last.at, href: `${links.inbox}?c=${c.id}` })
     }
     // Low / out of stock
     for (const p of products) {
@@ -67,9 +70,10 @@ export function Notifications() {
       list.push({ id: `rt-${r.id}`, kind: "alert", icon: <RotateCcw />, tone: "bg-fuchsia-100 text-fuchsia-700", title: `คำขอคืนสินค้า ${r.id}`, body: `${r.orderId} · ${r.reason}`, at: r.createdAt, href: "/returns" })
     // Expiring channel tokens
     for (const s of SHOPS.filter((x) => x.tokenExpiresInDays <= 7))
-      list.push({ id: `tok-${s.id}`, kind: "alert", icon: <PlugZap />, tone: "bg-sky-100 text-sky-700", title: "การเชื่อมต่อใกล้หมดอายุ", body: `${s.name} — เหลือ ${s.tokenExpiresInDays} วัน`, at: NOW - 3 * 3600_000, href: "/channels" })
-    return list.sort((a, b) => b.at - a.at)
-  }, [orders, conversations, products, reserved, returns, customers, me])
+      list.push({ id: `tok-${s.id}`, kind: "alert", icon: <PlugZap />, tone: "bg-sky-100 text-sky-700", title: "การเชื่อมต่อใกล้หมดอายุ", body: `${s.name} — เหลือ ${s.tokenExpiresInDays} วัน`, at: NOW - 3 * 3600_000, href: links.channels })
+    // CRM-only edition: no order / stock / return data — keep chats and connection alerts
+    return list.filter((n) => !crm || n.kind === "chat" || n.id.startsWith("tok-")).sort((a, b) => b.at - a.at)
+  }, [orders, conversations, products, reserved, returns, customers, me, crm, links])
 
   const unread = items.filter((n) => !read.has(n.id)).length
   const shown = items.filter((n) => tab === "all" || n.kind === tab)
@@ -96,7 +100,7 @@ export function Notifications() {
               ["chat", "แชท", count("chat")],
               ["alert", "แจ้งเตือน", count("alert")],
             ] as const
-          ).map(([k, label, n]) => (
+          ).filter(([k]) => !crm || k !== "order").map(([k, label, n]) => (
             <button key={k} onClick={() => setTab(k)} className={cn("flex items-center gap-1 rounded-full px-2.5 py-1", tab === k ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground")}>
               {k === "order" && <ShoppingCart className="size-3" />}
               {k === "chat" && <MessageCircle className="size-3" />}

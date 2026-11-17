@@ -6,6 +6,7 @@ import { ShieldX } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ROLES, canOpen } from "@/lib/mock-data"
 import { useOms } from "./store"
+import { CRM_BASE, isCrmPath } from "./crm-mode"
 
 /** Hides pages the current role may not open (demo of role-based access) */
 export function RouteGuard({ children }: { children: React.ReactNode }) {
@@ -21,7 +22,7 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
       <p className="text-sm text-muted-foreground">
         {me.name} ({ROLES[me.role].label}) ไม่ได้รับสิทธิ์ให้เปิดหน้านี้ — ติดต่อผู้จัดการหากต้องการสิทธิ์เพิ่ม หรือสลับผู้ใช้ที่รูปโปรไฟล์มุมขวาบน (เดโม)
       </p>
-      <Button render={<Link href="/" />}>กลับหน้าแดชบอร์ด</Button>
+      {isCrmPath(pathname) ? <Button render={<Link href={CRM_BASE} />}>กลับหน้าแชทรวม</Button> : <Button render={<Link href="/" />}>กลับหน้าแดชบอร์ด</Button>}
     </div>
   )
 }

@@ -7,6 +7,7 @@ import { ROLES, USERS, type Role } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
 import { Pill } from "./bits"
 import { useOms } from "./store"
+import { useCrmOnly } from "./crm-mode"
 
 const AVATAR: Record<Role, string> = {
   owner: "bg-brand-gradient",
@@ -22,6 +23,9 @@ export function UserAvatar({ short, role, className }: { short: string; role: Ro
 /** Demo "login": switch the current staff user to show role-based menus and locking */
 export function UserMenu() {
   const { me, setMe } = useOms()
+  const crm = useCrmOnly()
+  // CRM-only edition has no warehouse / accounting staff
+  const users = crm ? USERS.filter((u) => u.role === "owner" || u.role === "sales") : USERS
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50" aria-label="บัญชีผู้ใช้">
@@ -46,7 +50,7 @@ export function UserMenu() {
           <DropdownMenuLabel className="flex items-center gap-1.5">
             <Users className="size-3.5" /> สลับผู้ใช้ (เดโม)
           </DropdownMenuLabel>
-          {USERS.map((u) => (
+          {users.map((u) => (
             <DropdownMenuItem
               key={u.id}
               onClick={() => {

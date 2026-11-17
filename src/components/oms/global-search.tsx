@@ -10,6 +10,7 @@ import { baht } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import { PlatformDot, ProductThumb, StatusBadge, TierBadge, Pill } from "./bits"
 import { useOms } from "./store"
+import { useCrmLinks, useCrmOnly } from "./crm-mode"
 
 type Hit = { key: string; href: string; node: React.ReactNode }
 type Group = { id: string; label: string; icon: React.ReactNode; hits: Hit[]; total: number; moreHref?: string }
@@ -33,6 +34,8 @@ function Hl({ text, q }: { text: string; q: string }) {
 export function GlobalSearch() {
   const router = useRouter()
   const { orders, customers, products, conversations, returns, reserved } = useOms()
+  const crm = useCrmOnly()
+  const links = useCrmLinks()
   const [q, setQ] = React.useState("")
   const [open, setOpen] = React.useState(false)
   const [mobile, setMobile] = React.useState(false)
@@ -128,7 +131,7 @@ export function GlobalSearch() {
         total: c.length,
         hits: c.slice(0, LIMIT).map((x) => ({
           key: `c-${x.id}`,
-          href: `/customers?id=${x.id}`,
+          href: `${links.customers}?id=${x.id}`,
           node: (
             <>
               <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-muted text-[11px] font-semibold">{x.name.slice(0, 1)}</span>
@@ -190,7 +193,7 @@ export function GlobalSearch() {
           const m = [...x.messages].reverse().find((mm) => has(mm.text)) ?? x.messages[x.messages.length - 1]
           return {
             key: `ch-${x.id}`,
-            href: `/inbox?c=${x.id}`,
+            href: `${links.inbox}?c=${x.id}`,
             node: (
               <>
                 <PlatformDot platform={x.platform} />
@@ -232,8 +235,8 @@ export function GlobalSearch() {
           ),
         })),
       },
-    ].filter((g) => g.total > 0)
-  }, [term, nt, orders, customers, products, conversations, returns, custMap, reserved])
+    ].filter((g) => g.total > 0 && (!crm || g.id === "customers" || g.id === "chats"))
+  }, [term, nt, orders, customers, products, conversations, returns, custMap, reserved, crm, links])
 
   const flat = groups.flatMap((g) => g.hits)
   const total = groups.reduce((s, g) => s + g.total, 0)
@@ -288,7 +291,7 @@ export function GlobalSearch() {
             }}
             onFocus={() => setOpen(true)}
             onKeyDown={onKeyDown}
-            placeholder="ค้นหาออเดอร์ ลูกค้า สินค้า แชท เลขพัสดุ…"
+            placeholder={crm ? "ค้นหาลูกค้า เบอร์โทร ข้อความแชท…" : "ค้นหาออเดอร์ ลูกค้า สินค้า แชท เลขพัสดุ…"}
             className="pr-14 pl-8"
             role="combobox"
             aria-expanded={open && !!term}

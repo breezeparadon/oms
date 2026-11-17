@@ -12,6 +12,7 @@ import { CopyLinkButton, PlatformDot, Pill, ProductThumb, StatusBadge, TierBadge
 import { useQueryParam } from "@/components/oms/use-query-param"
 import { useOms } from "@/components/oms/store"
 import { UserAvatar } from "@/components/oms/user-menu"
+import { useCrmLinks, useCrmOnly } from "@/components/oms/crm-mode"
 import { Switch } from "@/components/ui/switch"
 import { can, userByName, AGENTS, CHAT_LABELS, CHAT_SOURCE, PLATFORMS, PLATFORM_IDS, QUICK_REPLIES, messagePreview, productBySku, orderTotal, shopById, type Conversation } from "@/lib/mock-data"
 import { ago, baht, dateOnly, timeOnly } from "@/lib/format"
@@ -21,6 +22,8 @@ type Filter = "all" | "mine" | "unread" | "pending" | "unassigned" | "closed"
 
 export function InboxView() {
   const { me, presence, takeOver, autoAssign, setAutoAssign, assignLeastLoaded, conversations, customers, orders, products, sendMessage, updateConversation } = useOms()
+  const crm = useCrmOnly()
+  const links = useCrmLinks()
   const [activeId, setActiveId] = useQueryParam("c")
   const [platform, setPlatform] = React.useState("all")
   const [filter, setFilter] = React.useState<Filter>("all")
@@ -47,6 +50,8 @@ export function InboxView() {
   const viewing = active ? presence(`conv:${active.id}`) : undefined
   const lockedTo = active && active.assignee && active.assignee !== me.name && active.status !== "closed" ? active.assignee : null
   const spend = custOrders.filter((o) => o.status !== "cancelled").reduce((s, o) => s + orderTotal(o), 0)
+  // CRM-only: other chat rooms of the same person (cross-channel history without order data)
+  const otherConvs = customer && active ? conversations.filter((c) => c.customerId === customer.id && c.id !== active.id) : []
 
   React.useEffect(() => {
     const el = threadRef.current
@@ -255,7 +260,7 @@ export function InboxView() {
               </Button>
             </div>
 
-            {active.context && <ContextBanner conv={active} />}
+            {active.context && <ContextBanner conv={active} crm={crm} />}
 
             <div ref={threadRef} className="flex-1 space-y-3 overflow-y-auto p-4">
               <div className="text-center text-[11px] text-muted-foreground">{dateOnly(active.messages[0].at)}</div>
@@ -382,16 +387,29 @@ export function InboxView() {
                 {customer.blacklisted && <Pill className="bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300">บัญชีดำ</Pill>}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 text-center">
-              <div className="rounded-lg bg-muted p-2">
-                <div className="text-xs text-muted-foreground">ยอดซื้อสะสม</div>
-                <div className="font-semibold">{baht(spend)}</div>
+            {crm ? (
+              <div className="grid grid-cols-2 gap-2 text-center">
+                <div className="rounded-lg bg-muted p-2">
+                  <div className="text-xs text-muted-foreground">ห้องแชท</div>
+                  <div className="font-semibold">{otherConvs.length + 1}</div>
+                </div>
+                <div className="rounded-lg bg-muted p-2">
+                  <div className="text-xs text-muted-foreground">ลูกค้าตั้งแต่</div>
+                  <div className="font-semibold">{dateOnly(customer.joinedAt)}</div>
+                </div>
               </div>
-              <div className="rounded-lg bg-muted p-2">
-                <div className="text-xs text-muted-foreground">ออเดอร์</div>
-                <div className="font-semibold">{custOrders.length}</div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2 text-center">
+                <div className="rounded-lg bg-muted p-2">
+                  <div className="text-xs text-muted-foreground">ยอดซื้อสะสม</div>
+                  <div className="font-semibold">{baht(spend)}</div>
+                </div>
+                <div className="rounded-lg bg-muted p-2">
+                  <div className="text-xs text-muted-foreground">ออเดอร์</div>
+                  <div className="font-semibold">{custOrders.length}</div>
+                </div>
               </div>
-            </div>
+            )}
             <div className="space-y-1">
               <div className="text-xs font-medium text-muted-foreground">ข้อมูลติดต่อ</div>
               <div>{customer.phone}</div>
@@ -422,10 +440,32 @@ export function InboxView() {
                 {customer.note && <div className="text-xs text-rose-600">{customer.note}</div>}
               </div>
             )}
+            {crm ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-medium text-muted-foreground">แชทช่องทางอื่นของลูกค้าคนนี้</div>
+                  <Link href={`${links.customers}?id=${customer.id}`} className="text-xs text-primary hover:underline">
+                    ดูโปรไฟล์
+                  </Link>
+                </div>
+                {otherConvs.length === 0 && <div className="text-xs text-muted-foreground">ทักมาช่องทางนี้ช่องทางเดียว</div>}
+                {otherConvs.map((c) => (
+                  <button key={c.id} onClick={() => setActiveId(c.id)} className="block w-full rounded-lg border p-2 text-left hover:bg-muted">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 font-medium">
+                        <PlatformDot platform={c.platform} className="size-4 text-[7px]" /> {PLATFORMS[c.platform].name}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">{ago(c.messages[c.messages.length - 1].at)}</span>
+                    </div>
+                    <div className="mt-1 truncate text-xs text-muted-foreground">{messagePreview(c.messages[c.messages.length - 1])}</div>
+                  </button>
+                ))}
+              </div>
+            ) : (
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="text-xs font-medium text-muted-foreground">ออเดอร์ล่าสุด</div>
-                <Link href={`/customers?id=${customer.id}`} className="text-xs text-primary hover:underline">
+                <Link href={`${links.customers}?id=${customer.id}`} className="text-xs text-primary hover:underline">
                   ดูทั้งหมด
                 </Link>
               </div>
@@ -444,7 +484,36 @@ export function InboxView() {
                 </Link>
               ))}
             </div>
-            {PLATFORMS[active.platform].kind === "social" ? (
+            )}
+            {crm ? (
+              PLATFORMS[active.platform].kind === "social" ? (
+                <div className="space-y-1.5 rounded-xl border border-dashed p-3 text-xs text-muted-foreground">
+                  <div>
+                    <span className="font-semibold text-foreground">{PLATFORMS[active.platform].name}</span> ไม่มีระบบตะกร้า — ปิดการขายในแชทได้ตามปกติ
+                  </div>
+                  <div>
+                    เวอร์ชัน CRM <span className="font-medium text-foreground">ไม่มีการสร้างออเดอร์ / ตัดสต๊อก / ส่งต่อคลัง</span> — แอดมินบันทึกออเดอร์ในระบบที่ร้านใช้อยู่
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2 rounded-xl border border-dashed p-3">
+                  <div className="text-xs text-muted-foreground">
+                    <span className="font-semibold text-foreground">{PLATFORMS[active.platform].name}</span> มีตะกร้าในแพลตฟอร์ม — ลูกค้ากดสั่งเอง ดูออเดอร์และสถานะจัดส่งได้ที่<span className="font-medium text-foreground">หลังร้านของ {PLATFORMS[active.platform].name}</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                    onClick={() => {
+                      sendMessage(active.id, `ใช้ได้กับคำสั่งซื้อขั้นต่ำ ฿500 · หมดอายุใน 3 วัน — กดเก็บแล้วใช้ตอนชำระเงินใน ${PLATFORMS[active.platform].name}`, "agent", { coupon: "ส่วนลด ฿50 สำหรับคุณ" })
+                      toast.success("ส่งคูปองแล้ว")
+                    }}
+                  >
+                    <Ticket /> ส่งคูปอง
+                  </Button>
+                </div>
+              )
+            ) : PLATFORMS[active.platform].kind === "social" ? (
               <div className="space-y-2 rounded-xl bg-brand-soft p-3">
                 <div className="text-xs">
                   <span className="font-semibold">{PLATFORMS[active.platform].name}</span> ไม่มีระบบตะกร้า — ปิดการขายในแชท แล้วสร้างออเดอร์ที่นี่ ออเดอร์จะเข้าสู่ขั้นตอนแพ็ก/ส่งเหมือน marketplace
@@ -532,7 +601,7 @@ function ProductCardBubble({ sku, platform, mine, at, agent }: { sku: string; pl
   )
 }
 
-function ContextBanner({ conv }: { conv: Conversation }) {
+function ContextBanner({ conv, crm }: { conv: Conversation; crm: boolean }) {
   const { orders, reserved } = useOms()
   const ctx = conv.context!
   const icon = ctx.source === "ad" || ctx.source === "broadcast" ? <Megaphone className="size-4" /> : ctx.source === "live" ? <Radio className="size-4" /> : ctx.source === "order_page" ? <ShoppingCart className="size-4" /> : <PackageSearch className="size-4" />
@@ -547,19 +616,24 @@ function ContextBanner({ conv }: { conv: Conversation }) {
           ที่มา: {CHAT_SOURCE[ctx.source]}
           {ctx.campaign && <span className="font-normal text-muted-foreground"> · แคมเปญ “{ctx.campaign}”</span>}
         </div>
-        {p && (
+        {p && crm && (
+          // CRM-only: product comes from the platform's chat payload — no central stock
+          <div className="truncate text-muted-foreground">สินค้า: {p.name} · {baht(p.price)}</div>
+        )}
+        {p && !crm && (
           <div className="truncate text-muted-foreground">
             สินค้า: {p.name} · {baht(p.price)} · <span className={avail <= p.safety ? "text-amber-600" : ""}>{avail <= 0 ? "หมดสต๊อก" : `คงเหลือ ${avail}`}</span>
           </div>
         )}
-        {order && (
+        {order && crm && <div className="truncate text-muted-foreground">อ้างถึงคำสั่งซื้อ {order.platformOrderNo} — ดูรายละเอียดที่หลังร้านของแพลตฟอร์ม</div>}
+        {order && !crm && (
           <div className="truncate text-muted-foreground">
             ออเดอร์: {order.id} · {baht(orderTotal(order))} · <StatusBadge status={order.status} /> {order.tracking && <span className="font-mono">· {order.tracking}</span>}
           </div>
         )}
       </div>
       {p && <ProductThumb sku={p.sku} className="size-9" />}
-      {order && (
+      {order && !crm && (
         <Link href={`/orders?status=${order.status}`} className="shrink-0 text-primary hover:underline">
           ดูออเดอร์
         </Link>

@@ -794,6 +794,10 @@ export const SYSTEM = "system"
 
 // Which pages each role can open (first match by prefix)
 export const ROUTE_ROLES: [string, Role[]][] = [
+  // CRM-only edition (/only-inbox) — no warehouse/accounting roles
+  ["/only-inbox/channels", ["owner"]],
+  ["/only-inbox/customers", ["owner", "sales"]],
+  ["/only-inbox", ["owner", "sales"]],
   ["/orders/new", ["owner", "sales"]],
   ["/orders/merge", ["owner", "sales", "warehouse"]],
   ["/orders", ["owner", "sales", "warehouse", "accounting"]],

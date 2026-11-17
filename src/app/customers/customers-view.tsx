@@ -16,12 +16,15 @@ import { CopyLinkButton, FilterSelect, Kpi, PageHeader, PlatformDot, Pill, Produ
 import { useQueryParam } from "@/components/oms/use-query-param"
 import { useOms } from "@/components/oms/store"
 import { Pager } from "@/components/oms/pager"
+import { useCrmLinks, useCrmOnly } from "@/components/oms/crm-mode"
 import { DAY, NOW, PLATFORMS, PLATFORM_IDS, TIERS, orderTotal, productBySku, type Tier } from "@/lib/mock-data"
 import { ago, baht, dateOnly, dateTime, num } from "@/lib/format"
 
 
 export function CustomersView() {
   const { customers, orders, conversations, updateCustomer } = useOms()
+  const crm = useCrmOnly()
+  const links = useCrmLinks()
   const [q, setQ] = React.useState("")
   const [platform, setPlatform] = React.useState("all")
   const [tier, setTier] = React.useState("all")
@@ -43,6 +46,19 @@ export function CustomersView() {
     return m
   }, [orders])
 
+  // CRM-only edition: activity comes from chats, not orders
+  const chatStats = React.useMemo(() => {
+    const m = new Map<string, { convs: number; open: number; last: number }>()
+    for (const c of conversations) {
+      const s = m.get(c.customerId) ?? { convs: 0, open: 0, last: 0 }
+      s.convs++
+      if (c.status !== "closed") s.open++
+      s.last = Math.max(s.last, c.messages[c.messages.length - 1].at)
+      m.set(c.customerId, s)
+    }
+    return m
+  }, [conversations])
+
   const list = customers
     .filter(
       (c) =>
@@ -50,7 +66,7 @@ export function CustomersView() {
         (tier === "all" || c.tier === tier) &&
         (!q || c.name.includes(q) || c.phone.replace(/-/g, "").includes(q.replace(/-/g, "")) || c.identities.some((i) => i.handle.toLowerCase().includes(q.toLowerCase()))),
     )
-    .sort((a, b) => (stats.get(b.id)?.spend ?? 0) - (stats.get(a.id)?.spend ?? 0))
+    .sort((a, b) => (crm ? (chatStats.get(b.id)?.last ?? 0) - (chatStats.get(a.id)?.last ?? 0) : (stats.get(b.id)?.spend ?? 0) - (stats.get(a.id)?.spend ?? 0)))
   const pageList = list.slice(page * pageSize, page * pageSize + pageSize)
   React.useEffect(() => setPage(0), [q, platform, tier])
 
@@ -62,6 +78,8 @@ export function CustomersView() {
   const openOrders = open ? orders.filter((o) => o.customerId === open.id) : []
   const openConvs = open ? conversations.filter((c) => c.customerId === open.id) : []
   const openStat = open ? stats.get(open.id) : undefined
+  const openChat = open ? chatStats.get(open.id) : undefined
+  const withOpenChat = customers.filter((c) => (chatStats.get(c.id)?.open ?? 0) > 0).length
 
   React.useEffect(() => setNoteDraft(open?.note ?? ""), [open?.id, open?.note])
 
@@ -69,7 +87,11 @@ export function CustomersView() {
     <div className="space-y-4">
       <PageHeader
         title="ข้อมูลลูกค้า (CRM)"
-        description="รวมลูกค้าจากทุกช่องทางเป็นโปรไฟล์เดียว (จับคู่ด้วยเบอร์โทร/ที่อยู่) — เห็นประวัติซื้อและแชทครบในที่เดียว"
+        description={
+          crm
+            ? "รวมลูกค้าจากทุกช่องทางเป็นโปรไฟล์เดียว — เห็นแชททุกช่องทาง แท็ก โน้ต และบัญชีดำในที่เดียว (เวอร์ชัน CRM ไม่มีข้อมูลการซื้อ)"
+            : "รวมลูกค้าจากทุกช่องทางเป็นโปรไฟล์เดียว (จับคู่ด้วยเบอร์โทร/ที่อยู่) — เห็นประวัติซื้อและแชทครบในที่เดียว"
+        }
         actions={
           <Button variant="outline" onClick={() => toast("นำเข้าลูกค้าจาก Excel/CSV (จำลอง)")}>
             <UserPlus /> นำเข้าลูกค้า
@@ -78,7 +100,11 @@ export function CustomersView() {
       />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="ลูกค้าทั้งหมด" value={num(customers.length)} hint={`ใหม่ 30 วัน ${newThisMonth} คน`} icon={<Users />} />
-        <Kpi label="ซื้อซ้ำ (>1 ออเดอร์)" value={num(repeat)} hint={`${Math.round((repeat / customers.length) * 100)}% ของลูกค้าทั้งหมด`} icon={<ShoppingBag />} tone="good" />
+        {crm ? (
+          <Kpi label="มีแชทเปิดอยู่" value={num(withOpenChat)} hint="ลูกค้าที่ยังคุยค้างอยู่" icon={<MessageCircle />} tone="good" />
+        ) : (
+          <Kpi label="ซื้อซ้ำ (>1 ออเดอร์)" value={num(repeat)} hint={`${Math.round((repeat / customers.length) * 100)}% ของลูกค้าทั้งหมด`} icon={<ShoppingBag />} tone="good" />
+        )}
         <Kpi label="ใช้หลายช่องทาง" value={num(multi)} hint="รวมโปรไฟล์อัตโนมัติแล้ว" icon={<MessageCircle />} />
         <Kpi label="VIP / Gold" value={num(customers.filter((c) => c.tier === "vip" || c.tier === "gold").length)} hint={`บัญชีดำ ${customers.filter((c) => c.blacklisted).length} คน`} icon={<Crown />} tone="warn" />
       </div>
@@ -100,15 +126,25 @@ export function CustomersView() {
                 <TableHead>ลูกค้า</TableHead>
                 <TableHead>ช่องทาง</TableHead>
                 <TableHead>ระดับ</TableHead>
-                <TableHead className="text-right">ออเดอร์</TableHead>
-                <TableHead className="text-right">ยอดซื้อสะสม</TableHead>
-                <TableHead>ซื้อล่าสุด</TableHead>
+                {crm ? (
+                  <>
+                    <TableHead className="text-right">ห้องแชท</TableHead>
+                    <TableHead>คุยล่าสุด</TableHead>
+                  </>
+                ) : (
+                  <>
+                    <TableHead className="text-right">ออเดอร์</TableHead>
+                    <TableHead className="text-right">ยอดซื้อสะสม</TableHead>
+                    <TableHead>ซื้อล่าสุด</TableHead>
+                  </>
+                )}
                 <TableHead>แท็ก</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {pageList.map((c) => {
                 const s = stats.get(c.id)
+                const cs = chatStats.get(c.id)
                 return (
                   <TableRow key={c.id} className="cursor-pointer" onClick={() => setOpenId(c.id)}>
                     <TableCell>
@@ -135,9 +171,18 @@ export function CustomersView() {
                     <TableCell>
                       <TierBadge tier={c.tier} />
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{s?.orders ?? 0}</TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">{baht(s?.spend ?? 0)}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{s?.last ? ago(s.last) : "—"}</TableCell>
+                    {crm ? (
+                      <>
+                        <TableCell className="text-right tabular-nums">{cs?.convs ?? 0}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{cs?.last ? ago(cs.last) : "—"}</TableCell>
+                      </>
+                    ) : (
+                      <>
+                        <TableCell className="text-right tabular-nums">{s?.orders ?? 0}</TableCell>
+                        <TableCell className="text-right font-medium tabular-nums">{baht(s?.spend ?? 0)}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{s?.last ? ago(s.last) : "—"}</TableCell>
+                      </>
+                    )}
                     <TableCell>
                       <div className="flex flex-wrap gap-1">
                         {c.tags.map((t) => (
@@ -170,6 +215,22 @@ export function CustomersView() {
                 </SheetDescription>
               </SheetHeader>
               <div className="space-y-5 px-4 pb-6 text-sm">
+                {crm ? (
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="rounded-lg bg-muted p-2">
+                      <div className="text-xs text-muted-foreground">ห้องแชท</div>
+                      <div className="font-semibold">{openChat?.convs ?? 0}</div>
+                    </div>
+                    <div className="rounded-lg bg-muted p-2">
+                      <div className="text-xs text-muted-foreground">ช่องทาง</div>
+                      <div className="font-semibold">{open.identities.length}</div>
+                    </div>
+                    <div className="rounded-lg bg-muted p-2">
+                      <div className="text-xs text-muted-foreground">คุยล่าสุด</div>
+                      <div className="font-semibold">{openChat?.last ? ago(openChat.last) : "—"}</div>
+                    </div>
+                  </div>
+                ) : (
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div className="rounded-lg bg-muted p-2">
                     <div className="text-xs text-muted-foreground">ยอดซื้อสะสม</div>
@@ -184,6 +245,7 @@ export function CustomersView() {
                     <div className="font-semibold">{baht(openStat?.orders ? openStat.spend / openStat.orders : 0)}</div>
                   </div>
                 </div>
+                )}
 
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-1">
@@ -206,7 +268,7 @@ export function CustomersView() {
                 </div>
 
                 <div className="space-y-2">
-                  <div className="text-xs font-medium text-muted-foreground">ระดับลูกค้า</div>
+                  <div className="text-xs font-medium text-muted-foreground">{crm ? "ระดับลูกค้า (แอดมินตั้งเอง — ไม่มียอดซื้อให้คำนวณ)" : "ระดับลูกค้า"}</div>
                   <div className="flex flex-wrap gap-1">
                     {(Object.keys(TIERS) as Tier[]).map((t) => (
                       <button key={t} onClick={() => updateCustomer(open.id, { tier: t })} className={open.tier === t ? "rounded-full ring-2 ring-primary" : "rounded-full opacity-60 hover:opacity-100"}>
@@ -219,7 +281,7 @@ export function CustomersView() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="bl" className="text-rose-600">
-                      บัญชีดำ (ห้ามส่ง COD)
+                      {crm ? "บัญชีดำ (ลูกค้าที่ต้องระวัง)" : "บัญชีดำ (ห้ามส่ง COD)"}
                     </Label>
                     <Switch
                       id="bl"
@@ -246,15 +308,18 @@ export function CustomersView() {
 
                 <div className="flex flex-wrap gap-2">
                   {openConvs[0] && (
-                    <Button variant="outline" render={<Link href={`/inbox?c=${openConvs[0].id}`} />}>
+                    <Button variant="outline" render={<Link href={`${links.inbox}?c=${openConvs[0].id}`} />}>
                       <MessageCircle /> เปิดแชท
                     </Button>
                   )}
-                  <Button render={<Link href={`/orders/new?customer=${open.id}${openConvs[0] ? `&conv=${openConvs[0].id}` : ""}`} />}>
-                    <ShoppingBag /> สร้างออเดอร์
-                  </Button>
+                  {!crm && (
+                    <Button render={<Link href={`/orders/new?customer=${open.id}${openConvs[0] ? `&conv=${openConvs[0].id}` : ""}`} />}>
+                      <ShoppingBag /> สร้างออเดอร์
+                    </Button>
+                  )}
                 </div>
 
+                {!crm && (
                 <div className="space-y-2">
                   <div className="text-xs font-medium text-muted-foreground">ประวัติการซื้อ ({openOrders.length})</div>
                   <div className="divide-y rounded-lg border">
@@ -284,6 +349,7 @@ export function CustomersView() {
                     ))}
                   </div>
                 </div>
+                )}
 
                 {openConvs.map((cv) => (
                   <div key={cv.id} className="space-y-2">

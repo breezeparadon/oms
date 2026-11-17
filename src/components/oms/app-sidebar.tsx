@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/sidebar"
 import { useOms } from "./store"
 import { canOpen } from "@/lib/mock-data"
+import { CRM_BASE, CRM_PATHS, useCrmOnly } from "./crm-mode"
 
 type Item = { href: string; label: string; icon: React.ComponentType; badge?: number }
 
@@ -21,7 +22,8 @@ export function AppSidebar() {
   const unread = conversations.filter((c) => c.unread > 0 && c.status !== "closed").length
   const returnOpen = returns.filter((r) => r.status === "requested").length
 
-  const groups: { label: string; items: Item[] }[] = [
+  const crm = useCrmOnly()
+  const fullGroups: { label: string; items: Item[] }[] = [
     { label: "ภาพรวม", items: [{ href: "/", label: "แดชบอร์ด", icon: LayoutDashboard }] },
     {
       label: "ออเดอร์ (OMS)",
@@ -56,14 +58,28 @@ export function AppSidebar() {
     },
   ]
 
-  const isActive = (href: string) => (href === "/" ? pathname === "/" : pathname === href || (href !== "/orders" && pathname.startsWith(href + "/")))
+  // CRM-only edition: chat + customers, nothing that needs order/stock data
+  const crmGroups: { label: string; items: Item[] }[] = [
+    {
+      label: "ลูกค้า (CRM)",
+      items: [
+        { href: CRM_PATHS.inbox, label: "แชทรวมทุกช่องทาง", icon: MessagesSquare, badge: unread },
+        { href: CRM_PATHS.customers, label: "ข้อมูลลูกค้า", icon: Users },
+      ],
+    },
+    { label: "ตั้งค่า", items: [{ href: CRM_PATHS.channels, label: "เชื่อมต่อช่องทาง", icon: PlugZap }] },
+  ]
+  const groups = crm ? crmGroups : fullGroups
+
+  const isActive = (href: string) =>
+    crm ? pathname === href : href === "/" ? pathname === "/" : pathname === href || (href !== "/orders" && pathname.startsWith(href + "/"))
 
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="flex-row items-center gap-1 group-data-[collapsible=icon]:flex-col">
         <SidebarMenu className="min-w-0 flex-1">
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" className="h-auto py-2" render={<Link href="/" />}>
+            <SidebarMenuButton size="lg" className="h-auto py-2" render={<Link href={crm ? CRM_BASE : "/"} />}>
               <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-brand-gradient text-sm font-black text-white">h</div>
               <div className="grid flex-1 text-left leading-none">
                 <span className="text-[22px] font-extrabold tracking-tight text-[#9200ff]" style={{ fontFamily: "var(--font-sans)" }}>
@@ -109,7 +125,10 @@ export function AppSidebar() {
       </SidebarContent>
       <SidebarFooter>
         <div className="rounded-lg bg-brand-soft p-2.5 text-[11px] leading-snug text-muted-foreground group-data-[collapsible=icon]:hidden">
-          <span className="font-semibold text-foreground">OMS + CRM</span> · Mockup สำหรับนำเสนอ — ข้อมูลทั้งหมดเป็นข้อมูลจำลอง
+          <span className="font-semibold text-foreground">{crm ? "CRM อย่างเดียว" : "OMS + CRM"}</span> · Mockup สำหรับนำเสนอ — ข้อมูลทั้งหมดเป็นข้อมูลจำลอง
+          <Link href={crm ? "/" : CRM_BASE} className="mt-1.5 block font-medium text-primary hover:underline">
+            {crm ? "← ดูเวอร์ชันเต็ม OMS + CRM" : "ดูเวอร์ชัน CRM อย่างเดียว →"}
+          </Link>
         </div>
       </SidebarFooter>
       <SidebarRail />

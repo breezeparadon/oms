@@ -11,6 +11,7 @@ import { GlobalSearch } from "./global-search"
 import { UserMenu } from "./user-menu"
 import { RouteGuard } from "./route-guard"
 import { OmsProvider } from "./store"
+import { isCrmPath } from "./crm-mode"
 
 const TITLES: Record<string, string> = {
   "/": "แดชบอร์ด",
@@ -25,6 +26,9 @@ const TITLES: Record<string, string> = {
   "/returns": "คืนสินค้า/คืนเงิน",
   "/reports": "รายงาน",
   "/channels": "เชื่อมต่อช่องทาง",
+  "/only-inbox": "แชทรวมทุกช่องทาง",
+  "/only-inbox/customers": "ข้อมูลลูกค้า",
+  "/only-inbox/channels": "เชื่อมต่อช่องทาง",
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -38,7 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-background/90 px-4 backdrop-blur">
               <SidebarTrigger className="-ml-1 md:hidden" />
               <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4 md:hidden" />
-              <span className="truncate text-sm font-medium">{TITLES[pathname] ?? "Happy Shopping OMS"}</span>
+              <span className="truncate text-sm font-medium">{TITLES[pathname] ?? (isCrmPath(pathname) ? "Happy Shopping CRM" : "Happy Shopping OMS")}</span>
               <div className="ml-auto flex items-center gap-2">
                 <GlobalSearch />
                 <Notifications />
